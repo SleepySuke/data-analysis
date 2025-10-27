@@ -175,7 +175,8 @@ generated/
 *.gen
 *.template
 
-# 本地覆盖配置（如 application-local.yml）
+# 本地覆盖配置（如 application.yml）
+application.yml
 application-*.yml
 application-*.yaml
 bootstrap-*.yml

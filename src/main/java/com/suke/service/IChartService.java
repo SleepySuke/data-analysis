@@ -1,5 +1,6 @@
 package com.suke.service;
 
+import com.suke.domain.dto.chart.ChartAddDTO;
 import com.suke.domain.entity.Chart;
 import com.baomidou.mybatisplus.extension.service.IService;
 
@@ -13,5 +14,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
  * @since 2025-10-16
  */
 public interface IChartService extends IService<Chart> {
+    Long addChart(ChartAddDTO chartAddDTO);
 
+    Chart getChartById(Long Id);
 }

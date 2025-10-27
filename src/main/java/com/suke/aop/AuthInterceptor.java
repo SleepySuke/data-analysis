@@ -2,6 +2,7 @@ package com.suke.aop;
 
 import com.suke.annotation.AuthCheck;
 import com.suke.common.ErrorCode;
+import com.suke.context.UserContext;
 import com.suke.domain.entity.User;
 import com.suke.domain.enums.UserRoleEnum;
 import com.suke.service.IUserService;
@@ -37,12 +38,17 @@ public class AuthInterceptor {
     public Object doInterceptor(ProceedingJoinPoint joinPoint, AuthCheck authcheck) throws Throwable {
         //获取到当前被注解的方法的用户 即登录用户
         String mustRole = authcheck.mustRole();
-        //通过RequestAttributes获取当前登录用户
-        RequestAttributes requestAttributes = RequestContextHolder.currentRequestAttributes();
-        //通过所有的请求属性获取当前登录用户
-        HttpServletRequest request =((ServletRequestAttributes) requestAttributes).getRequest();
+//        //通过RequestAttributes获取当前登录用户
+//        RequestAttributes requestAttributes = RequestContextHolder.currentRequestAttributes();
+//        //通过所有的请求属性获取当前登录用户
+//        HttpServletRequest request =((ServletRequestAttributes) requestAttributes).getRequest();
+
         //当前用户
-        User loginUser = userService.getLoginUser(request);
+        Long userId = UserContext.getCurrentId();
+        User loginUser = null;
+        if(userId != null){
+            loginUser = userService.getById(userId);
+        }
         //无需权限 放行
         if (mustRole == null) {
             return joinPoint.proceed();
