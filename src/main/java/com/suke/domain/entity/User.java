@@ -6,10 +6,6 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import java.time.LocalDateTime;
 import java.io.Serializable;
-
-import com.fasterxml.jackson.annotation.JsonFormat;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
@@ -27,7 +23,6 @@ import lombok.experimental.Accessors;
 @EqualsAndHashCode(callSuper = false)
 @Accessors(chain = true)
 @TableName("user")
-@ApiModel(value="User对象", description="用户")
 public class User implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -36,7 +31,6 @@ public class User implements Serializable {
     /**
      * 用户id
      */
-    @ApiModelProperty(value = "id")
     @TableId(value = "id", type = IdType.ASSIGN_ID)
     //使用AUTO会实现自增，此时对于用户不安全，所以使用ASSIGN_ID 使用雪花算法生成唯一id 长整型
     private Long id;
@@ -44,52 +38,42 @@ public class User implements Serializable {
     /**
      * 账号
      */
-    @ApiModelProperty(value = "账号")
     private String userAccount;
 
     /**
      * 密码
      */
-    @ApiModelProperty(value = "密码")
     private String userPassword;
 
     /**
      * 用户昵称
      */
-    @ApiModelProperty(value = "用户昵称")
     private String userName;
 
     /**
      * 用户头像
      */
-    @ApiModelProperty(value = "用户头像")
     private String userAvatar;
 
     /**
      * 用户角色：user/admin
      */
-    @ApiModelProperty(value = "用户角色：user/admin")
     private String userRole;
 
     /**
      * 创建时间
      */
-    @ApiModelProperty(value = "创建时间")
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 
     /**
      * 更新时间
      */
-    @ApiModelProperty(value = "更新时间")
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updateTime;
 
     /**
      * 是否删除
      * mybatisX 会自动识别这个字段为逻辑删除字段
      */
-    @ApiModelProperty(value = "是否删除")
     @TableLogic
     private Integer isDelete;
 

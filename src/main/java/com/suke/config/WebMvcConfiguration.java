@@ -12,12 +12,7 @@ import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurationSupport;
-import springfox.documentation.builders.ApiInfoBuilder;
-import springfox.documentation.builders.PathSelectors;
-import springfox.documentation.builders.RequestHandlerSelectors;
-import springfox.documentation.service.ApiInfo;
-import springfox.documentation.spi.DocumentationType;
-import springfox.documentation.spring.web.plugins.Docket;
+
 
 import java.util.List;
 
@@ -41,7 +36,9 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
     protected void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(jwtTokenInterceptor)
                 .addPathPatterns("/**")
-                .excludePathPatterns("/user/login", "/user/register");
+                .excludePathPatterns("/user/login", "/user/register",
+                        "/doc.html", "/webjars/**",
+                        "/v3/api-docs/**", "/error");
     }
 
     /**
@@ -60,28 +57,6 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
 
 
     /**
-     * 添加接口文档生成
-     * @return
-     */
-    @Bean
-    public Docket userDocket(){
-        log.info("接口文档生成...");
-        ApiInfo apiInfo = new ApiInfoBuilder()
-                .title("智能数据分析平台")
-                .version("1.0")
-                .description("智能数据分析平台接口文档")
-                .build();
-        Docket docket = new Docket(DocumentationType.SWAGGER_2)
-                .groupName("用户接口")
-                .apiInfo(apiInfo)
-                .select()
-                .apis(RequestHandlerSelectors.basePackage("com.suke.controller"))
-                .paths(PathSelectors.any())
-                .build();
-        return docket;
-    }
-
-    /**
      * 扩展消息转换器
      * @param converters
      */
@@ -96,13 +71,4 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
         converters.add(0,converter);
     }
 
-    /**
-     * 设置静态资源映射
-     * @param registry
-     */
-    protected void addResourceHandlers(ResourceHandlerRegistry registry) {
-        log.info("开始进行静态资源映射...");
-        registry.addResourceHandler("/doc.html").addResourceLocations("classpath:/META-INF/resources/");
-        registry.addResourceHandler("/webjars/**").addResourceLocations("classpath:/META-INF/resources/webjars/");
-    }
 }

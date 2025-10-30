@@ -17,11 +17,11 @@ public enum UserRoleEnum {
     BAN("被封禁账号", "ban");
 
     private final String text;
-    private final String value;
+    private final String name;
 
-    UserRoleEnum(String text, String value) {
+    UserRoleEnum(String text, String name) {
         this.text = text;
-        this.value = value;
+        this.name = name;
     }
 
     /**
@@ -29,30 +29,30 @@ public enum UserRoleEnum {
      *
      * @return
      */
-    public static List<String> getValues() {
-        return Arrays.stream(values()).map(item -> item.value).collect(Collectors.toList());
+    public static List<String> getnames() {
+        return Arrays.stream(values()).map(item -> item.name).collect(Collectors.toList());
     }
 
     /**
-     * 根据 value 获取枚举
+     * 根据 name 获取枚举
      *
-     * @param value
+     * @param name
      * @return
      */
-    public static UserRoleEnum getEnumByValue(String value) {
-        if (ObjectUtils.isEmpty(value)) {
+    public static UserRoleEnum getEnumByname(String name) {
+        if (ObjectUtils.isEmpty(name)) {
             return null;
         }
         for (UserRoleEnum anEnum : UserRoleEnum.values()) {
-            if (anEnum.value.equals(value)) {
+            if (anEnum.name.equals(name)) {
                 return anEnum;
             }
         }
         return null;
     }
 
-    public String getValue() {
-        return value;
+    public String getname() {
+        return name;
     }
 
     public String getText() {

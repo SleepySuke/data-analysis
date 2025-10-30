@@ -15,7 +15,6 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import javax.servlet.http.HttpServletRequest;
 
 /**
  * @author 自然醒
@@ -54,7 +53,7 @@ public class AuthInterceptor {
             return joinPoint.proceed();
         }
         //权限验证 必须有权限才可以通过
-        UserRoleEnum userRoleEnum = UserRoleEnum.getEnumByValue(loginUser.getUserRole());
+        UserRoleEnum userRoleEnum = UserRoleEnum.getEnumByname(loginUser.getUserRole());
         if (userRoleEnum == null || UserRoleEnum.valueOf(mustRole) != userRoleEnum) {
             throw new RuntimeException(ErrorCode.NO_AUTH_ERROR.getMessage());
         }

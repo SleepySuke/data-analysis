@@ -15,6 +15,9 @@ import com.suke.properties.JWTProperties;
 import com.suke.service.IUserService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.suke.utils.JWTUtil;
+
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,8 +25,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.DigestUtils;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -48,7 +49,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     @Resource
     private JWTProperties jwtProperties;
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public LoginUserVO userLogin(UserLoginDTO userLoginDTO, HttpServletRequest request) {
         String userAccount = userLoginDTO.getUserAccount();
@@ -93,7 +94,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return loginUserVO;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public Long userRegister(UserRegisterDTO userRegisterDTO, HttpServletRequest request) {
         String userAccount = userRegisterDTO.getUserAccount();

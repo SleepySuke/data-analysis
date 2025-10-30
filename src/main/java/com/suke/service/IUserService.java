@@ -5,8 +5,8 @@ import com.suke.domain.dto.user.UserRegisterDTO;
 import com.suke.domain.entity.User;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.suke.domain.vo.LoginUserVO;
+import jakarta.servlet.http.HttpServletRequest;
 
-import javax.servlet.http.HttpServletRequest;
 
 /**
  * <p>
@@ -25,7 +25,7 @@ public interface IUserService extends IService<User> {
      * @param userLoginDTO
      * @return
      */
-    LoginUserVO userLogin(UserLoginDTO userLoginDTO, HttpServletRequest  request);
+    LoginUserVO userLogin(UserLoginDTO userLoginDTO, HttpServletRequest request);
 
     /**
      * 用户注册

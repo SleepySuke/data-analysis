@@ -11,13 +11,13 @@ import com.suke.domain.vo.LoginUserVO;
 import com.suke.exception.FailLoginException;
 import com.suke.exception.FailRegisterException;
 import com.suke.service.IUserService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
+
+
 
 /**
  * <p>
@@ -31,7 +31,6 @@ import javax.servlet.http.HttpServletRequest;
 @RestController
 @RequestMapping("/user")
 @Slf4j
-@Api(tags = "用户接口")
 public class UserController {
 
     @Resource
@@ -44,7 +43,6 @@ public class UserController {
      * @return
      */
     @PostMapping("/login")
-    @ApiOperation("用户登录")
     public Result<LoginUserVO> login(@RequestBody UserLoginDTO userLoginDTO, HttpServletRequest request){
         log.info("用户登录：{}", userLoginDTO);
         if(userLoginDTO == null){
@@ -63,7 +61,6 @@ public class UserController {
      * @return
      */
     @PostMapping("/register")
-    @ApiOperation("用户注册")
     public Result<Long> register(@RequestBody UserRegisterDTO userRegisterDTO, HttpServletRequest request){
         log.info("用户注册：{}", userRegisterDTO);
         if(userRegisterDTO == null){
@@ -76,7 +73,6 @@ public class UserController {
     }
 
     @GetMapping("/getLoginUser")
-    @ApiOperation("获取当前登录用户")
     public Result<LoginUserVO> getLoginUser(HttpServletRequest request){
         User user = userService.getLoginUser(request);
         if(user == null){
