@@ -9,6 +9,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,5 +68,25 @@ public class FileUtils {
             sb.append(StringUtils.join(dataList, ",")).append("\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * 校验文件后缀
+     * @param multipartFile
+     * @return
+     */
+    public static boolean validSuffix(MultipartFile multipartFile){
+        List<String> list = Arrays.asList("xlsx", "xls");
+        //获取到文件名
+        String originalFilename = multipartFile.getOriginalFilename();
+        if(StringUtils.isAnyBlank(originalFilename)){
+            return false;
+        }
+        //获取文件后缀
+        String suffix = originalFilename.substring(originalFilename.lastIndexOf(".") + 1);
+        if(list.contains(suffix)){
+            return true;
+        }
+        return false;
     }
 }

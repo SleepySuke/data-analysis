@@ -1,16 +1,23 @@
 package com.suke.controller;
 
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.suke.common.ErrorCode;
 import com.suke.common.Result;
+import com.suke.context.UserContext;
 import com.suke.domain.dto.chart.ChartAddDTO;
+import com.suke.domain.dto.chart.ChartEditDTO;
+import com.suke.domain.dto.chart.ChartPageQueryDTO;
 import com.suke.domain.dto.file.UploadFileDTO;
 import com.suke.domain.entity.Chart;
 import com.suke.domain.vo.GenChartVO;
 import com.suke.service.IChartService;
+import com.suke.utils.RedisUtils;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.poi.ss.formula.functions.T;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,6 +40,9 @@ public class ChartController {
 
     @Resource
     private IChartService chartService;
+
+    @Autowired
+    private RedisUtils redisUtils;
 
     /**
      * 添加图表信息
@@ -72,6 +82,26 @@ public class ChartController {
     }
 
     /**
+     * 返回用户编辑图表
+     * @param Id
+     * @return
+     */
+    @GetMapping("/getChartEdit")
+    public Result<Chart> editChart(Long Id){
+        log.info("获取要修改图表信息的id：{}",Id);
+        if( Id == null || Id < 0){
+            log.error("图表信息参数错误");
+            return Result.error(ErrorCode.PARAMS_ERROR.getMessage());
+        }
+        Chart chartVO = chartService.getChartById(Id);
+        if(chartVO == null){
+            log.error("查询图表失败");
+            return Result.error(ErrorCode.OPERATION_ERROR.getMessage());
+        }
+        return Result.success(chartVO);
+    }
+
+    /**
      * 上传图表信息智能分析
      * @param multipartFile
      * @param fileDTO
@@ -81,6 +111,9 @@ public class ChartController {
     public Result<GenChartVO> uploadChart(@RequestPart("file")MultipartFile multipartFile, UploadFileDTO fileDTO){
         log.info("文件描述：{}",fileDTO);
         log.info("上传的文件：{}",multipartFile);
+        Long userId = UserContext.getCurrentId();
+        // 对用户限流
+        redisUtils.doRateLimit(userId.toString());
         if(fileDTO == null){
             log.error("上传图表信息参数错误");
             return Result.error(ErrorCode.PARAMS_ERROR.getMessage());
@@ -102,5 +135,42 @@ public class ChartController {
         }
         GenChartVO genChartVO = chartService.analysisFile(multipartFile, fileDTO);
         return Result.success(genChartVO);
+    }
+
+    /**
+     * 获取我的图表列表
+     * @param chartPageQueryDTO
+     * @return
+     */
+    @PostMapping("/my/list/page")
+    public Result<Page<Chart>> getMyChartList(@RequestBody ChartPageQueryDTO chartPageQueryDTO){
+        log.info("获取我的图表列表：{}",chartPageQueryDTO);
+        if(chartPageQueryDTO == null){
+            log.error("获取我的图表列表参数错误");
+            return Result.error(ErrorCode.PARAMS_ERROR.getMessage());
+        }
+        Page<Chart> pageResult = chartService.getMyChartList(chartPageQueryDTO);
+        log.info("获取我的图表列表成功：{}",pageResult);
+        return Result.success(pageResult);
+    }
+
+    /**
+     * 修改我的图表信息
+     * @param chartEditDTO
+     * @return
+     */
+    @PostMapping("/editChart")
+    public Result editMyChart(@RequestBody ChartEditDTO chartEditDTO){
+        log.info("修改我的图表信息：{}",chartEditDTO);
+        if(chartEditDTO == null){
+            log.error("修改我的图表信息参数错误");
+            return Result.error(ErrorCode.PARAMS_ERROR.getMessage());
+        }
+        Boolean success = chartService.editChart(chartEditDTO);
+        if(!success){
+            log.error("修改我的图表信息失败");
+            return Result.error(ErrorCode.OPERATION_ERROR.getMessage());
+        }
+        return Result.success("修改成功");
     }
 }

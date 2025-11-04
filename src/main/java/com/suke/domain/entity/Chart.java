@@ -1,8 +1,7 @@
 package com.suke.domain.entity;
 
-import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.*;
+
 import java.time.LocalDateTime;
 import java.io.Serializable;
 import lombok.Data;
@@ -49,6 +48,16 @@ public class Chart implements Serializable {
     private String chartData;
 
     /**
+     * 状态
+     */
+    private String status;
+
+    /**
+     * 执行信息
+     */
+    private String execMsg;
+
+    /**
      * 图表类型
      */
     private String chartType;
@@ -71,11 +80,13 @@ public class Chart implements Serializable {
     /**
      * 创建时间
      */
+    @TableField(fill = FieldFill.INSERT,value = "createTime")
     private LocalDateTime createTime;
 
     /**
      * 更新时间
      */
+    @TableField(fill = FieldFill.INSERT_UPDATE,value = "updateTime")
     private LocalDateTime updateTime;
 
     /**

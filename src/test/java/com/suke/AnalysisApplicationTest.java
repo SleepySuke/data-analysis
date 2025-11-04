@@ -4,13 +4,22 @@ import com.suke.common.AnalysisResult;
 import com.suke.utils.AIDocking;
 import com.suke.utils.FileUtils;
 import com.suke.utils.ParseAIResponse;
+import com.suke.utils.RedisUtils;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import reactor.core.publisher.Flux;
+
+import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * @author 自然醒
@@ -25,6 +34,10 @@ public class AnalysisApplicationTest {
 
     @Resource
     private AIDocking aiDocking;
+    @Autowired
+    private RedisUtils redisUtils;
+    @Autowired
+    private ThreadPoolExecutor threadPoolExecutor;
     @Test
     void FileUtilsTest() {
         FileUtils.excelToCsv(null);
@@ -78,5 +91,56 @@ public class AnalysisApplicationTest {
         log.info("解析结果:");
         log.info("分析结论: \n{}", result.getAnalysis());
         log.info("图表配置: \n{}", result.getChartConfig());
+    }
+
+    @Test
+    void RateLimitTest() throws InterruptedException {
+        String userId = "1";
+        for(int i = 0; i < 2; i++){
+            redisUtils.doRateLimit(userId);
+            System.out.println("用户" + userId + "已访问");
+        }
+        Thread.sleep(1000);
+        for(int i = 0; i < 5; i++){
+            redisUtils.doRateLimit(userId);
+            System.out.println("用户" + userId + "已访问");
+        }
+    }
+
+    @Test
+    void ThreadPoolExecutorTest() throws InterruptedException {
+        //Java并发包下的异步执行，一般用于不返回数据值情况下
+        for(int i = 0; i < 10; i++){
+            CompletableFuture.runAsync(() -> {
+                int count = 0;
+                count ++;
+                System.out.println("任务"+ count +"执行中，" + "当前线程：" + Thread.currentThread().getName());
+                try {
+                    Thread.sleep(600000);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }, threadPoolExecutor);
+
+
+//            Thread.sleep(1000);
+
+            //存储线程池状态
+            Map<String,Object> map = new HashMap<>();
+            //获取线程池的队列长度
+            int size = threadPoolExecutor.getQueue().size();
+            map.put("队列长度", size);
+            //获取线程池已接收的任务总数
+            long completedTaskCount = threadPoolExecutor.getTaskCount();
+            map.put("任务总数", completedTaskCount);
+            //获取线程池已执行完成的任务总数
+            long completedTaskCount1 = threadPoolExecutor.getCompletedTaskCount();
+            map.put("已执行完成的任务总数", completedTaskCount1);
+            //正在执行的任务数
+            int activeCount = threadPoolExecutor.getActiveCount();
+            map.put("正在执行的任务", activeCount);
+            System.out.println(map);
+        }
+
     }
 }

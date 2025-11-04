@@ -1,6 +1,9 @@
 package com.suke.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.suke.domain.dto.chart.ChartAddDTO;
+import com.suke.domain.dto.chart.ChartEditDTO;
+import com.suke.domain.dto.chart.ChartPageQueryDTO;
 import com.suke.domain.dto.file.UploadFileDTO;
 import com.suke.domain.entity.Chart;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -22,4 +25,8 @@ public interface IChartService extends IService<Chart> {
     Chart getChartById(Long Id);
 
     GenChartVO analysisFile(MultipartFile multipartFile, UploadFileDTO fileDTO);
+
+    Page<Chart> getMyChartList(ChartPageQueryDTO chartPageQueryDTO);
+
+    Boolean editChart(ChartEditDTO chartEditDTO);
 }

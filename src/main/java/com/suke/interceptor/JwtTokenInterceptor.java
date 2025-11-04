@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 
-
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -49,7 +50,7 @@ public class JwtTokenInterceptor implements HandlerInterceptor {
         }
         //从请求头中读取JWT令牌中token
         String token = request.getHeader(jwtProperties.getTokenName());
-        log.info("JWT令牌：{}，请求头名称：{}", token, jwtProperties.getTokenName());
+//        log.info("JWT令牌：{}，请求头名称：{}", token, jwtProperties.getTokenName());
         //token为空 此时可能是不需要令牌的接口
         if(StringUtils.isAnyBlank(token)){
             return true;
@@ -67,6 +68,7 @@ public class JwtTokenInterceptor implements HandlerInterceptor {
             }
             User loginUser = userService.getById(userId);
             if(loginUser == null){
+                response.setStatus(401);
                 return false;
             }
             UserContext.setCurrentId(userId);

@@ -40,6 +40,12 @@
 <!--            <artifactId>mybatis-plus-boot-starter</artifactId>-->
 <!--            <version>3.5.2</version>-->
 <!--        </dependency>-->
+        <!--分页查询插件-->
+<!--        <dependency>-->
+<!--            <groupId>com.github.pagehelper</groupId>-->
+<!--            <artifactId>pagehelper-spring-boot-starter</artifactId>-->
+<!--            <version>2.1.0</version>-->
+<!--        </dependency>-->
         <!--json格式解析，fastJson2-->
         <dependency>
             <groupId>com.alibaba.fastjson2</groupId>
@@ -59,6 +65,12 @@
         <dependency>
             <groupId>org.springframework.session</groupId>
             <artifactId>spring-session-data-redis</artifactId>
+        </dependency>
+        <!-- redisson-->
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson</artifactId>
+            <version>3.13.6</version>
         </dependency>
         <!-- elasticsearch-->
         <dependency>
