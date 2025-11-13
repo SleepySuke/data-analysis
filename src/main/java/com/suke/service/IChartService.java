@@ -24,7 +24,21 @@ public interface IChartService extends IService<Chart> {
 
     Chart getChartById(Long Id);
 
+    /**
+     * 同步分析文件
+     * @param multipartFile
+     * @param fileDTO
+     * @return
+     */
     GenChartVO analysisFile(MultipartFile multipartFile, UploadFileDTO fileDTO);
+
+    /**
+     * 异步分析文件
+     * @param multipartFile
+     * @param fileDTO
+     * @return
+     */
+    GenChartVO asyncAnalyzeFile(MultipartFile multipartFile, UploadFileDTO fileDTO);
 
     Page<Chart> getMyChartList(ChartPageQueryDTO chartPageQueryDTO);
 

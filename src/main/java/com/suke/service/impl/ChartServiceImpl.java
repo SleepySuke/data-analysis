@@ -3,7 +3,10 @@ package com.suke.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.github.rholder.retry.Retryer;
 import com.suke.common.AnalysisResult;
+import com.suke.common.WebSocketMessage;
+import com.suke.config.RetryConfig;
 import com.suke.context.UserContext;
 import com.suke.domain.dto.chart.ChartAddDTO;
 import com.suke.domain.dto.chart.ChartEditDTO;
@@ -21,6 +24,8 @@ import com.suke.service.IUserService;
 import com.suke.utils.AIDocking;
 import com.suke.utils.FileUtils;
 import com.suke.utils.ParseAIResponse;
+import com.suke.utils.WebSocketServer;
+import io.netty.handler.timeout.TimeoutException;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -29,7 +34,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.*;
 
 /**
  * <p>
@@ -48,6 +56,12 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
     private AIDocking aiDocking;
     @Autowired
     private ChartMapper chartMapper;
+    @Autowired
+    private ThreadPoolExecutor threadPoolExecutor;
+    @Autowired
+    private WebSocketServer webSocketServer;
+    @Autowired
+    private Retryer<String> aiAnalyzeRetryer;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -84,6 +98,13 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         return null;
     }
 
+    /**
+     * 同步分析文件
+     *
+     * @param multipartFile
+     * @param fileDTO
+     * @return
+     */
     @Override
     public GenChartVO analysisFile(MultipartFile multipartFile, UploadFileDTO fileDTO) {
         log.info("文件描述：{}", fileDTO);
@@ -92,7 +113,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
             log.error("文件为空");
             return null;
         }
-        if(FileUtils.validSuffix(multipartFile)){
+        if (!FileUtils.validSuffix(multipartFile)) {
             log.error("文件格式错误");
             return null;
         }
@@ -131,7 +152,10 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
                 .setChartData(csvData)
                 .setGenChart(analysisResult.getChartConfig())//图表配置
                 .setGenResult(analysisResult.getAnalysis())//图表结果
-                .setUserId(userId);
+                .setUserId(userId)
+                .setStatus("succeed")
+                .setExecMsg("分析成功");
+        ;
         log.info("保存的图表信息：{}", chart);
         boolean save = this.save(chart);
         if (!save) {
@@ -141,6 +165,185 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         genChartVO.setChartId(chart.getId())
                 .setGenChart(chart.getGenChart())
                 .setGenResult(chart.getGenResult());
+        return genChartVO;
+    }
+
+    /**
+     * 异步分析文件
+     *
+     * @param multipartFile
+     * @param fileDTO
+     * @return
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public GenChartVO asyncAnalyzeFile(MultipartFile multipartFile, UploadFileDTO fileDTO) {
+        log.info("文件描述：{}", fileDTO);
+        log.info("文件：{}", multipartFile);
+        if (multipartFile == null) {
+            log.error("文件为空");
+            return null;
+        }
+        if (!FileUtils.validSuffix(multipartFile)) {
+            log.error("文件格式错误");
+            return null;
+        }
+        Long userId = UserContext.getCurrentId();
+        if (userId == null) {
+            log.error("用户未登录");
+            return null;
+        }
+        String fileName = fileDTO.getFileName();
+        String goal = fileDTO.getGoal();
+        String chartType = fileDTO.getChartType();
+        if (StringUtils.isAnyBlank(fileName)) {
+            log.error("文件名称过长:{}", fileName);
+            throw new BaseException("文件名称过长");
+        }
+        if (StringUtils.isAnyBlank(goal)) {
+            log.error("分析目标为空:{}", goal);
+            throw new BaseException("分析目标为空");
+        }
+        if (StringUtils.isAnyBlank(chartType)) {
+            log.error("图表类型为空:{}", chartType);
+            throw new BaseException("图表类型为空");
+        }
+        String csvData = FileUtils.excelToCsv(multipartFile);
+        if (StringUtils.isAnyBlank(csvData)) {
+            log.error("数据为空");
+            throw new BaseException("数据为空");
+        }
+        WebSocketMessage wsMsg = new WebSocketMessage();
+        //先保存数据，再去调用AI分析，此时AI调用变为异步调用，保存数据改为同步调用，AI调用为提交任务
+        Chart chart = new Chart();
+        //分析结果还未生成，仅保存图表名称等简单参数
+        chart.setName(fileName)
+                .setChartType(chartType)
+                .setChartData(csvData)
+                .setGoal(goal);
+        chart.setStatus("wait");
+        chart.setUserId(userId);
+        boolean save = this.save(chart);
+        if (!save) {
+            log.error("保存图表信息失败");
+            throw new FailSaveException("保存图表信息失败");
+        }
+        log.info("保存的图表的id：{}", chart.getId());
+        Map<String,Object> waitingMsg = new HashMap<>();
+        waitingMsg.put("chartId",chart.getId());
+        wsMsg.setType("analysis_status")
+                .setMessage("正在等待处理数据")
+                .setStatus("waiting")
+                .setData(waitingMsg);
+        webSocketServer.sendMessageToUser(userId.toString(), wsMsg);
+        //异步处理数据,提交任务
+        try {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    log.info("开始处理数据");
+                    Map<String,Object> runningMsg = new HashMap<>();
+                    runningMsg.put("chartId",chart.getId());
+                    wsMsg.setType("analysis_status")
+                            .setMessage("正在处理数据")
+                            .setStatus("running")
+                            .setData(runningMsg);
+                    webSocketServer.sendMessageToUser(userId.toString(), wsMsg);
+                    //此时处理数据，需要将状态进行修改
+                    Chart updateChart = new Chart();
+                    updateChart.setId(chart.getId());
+                    updateChart.setStatus("running");
+                    boolean update = this.updateById(updateChart);
+                    if (!update) {
+                        log.error("更新图表信息失败");
+                        return;
+                    }
+                    //对于提交的任务设置一个超时机制
+                    CompletableFuture<String> aiFuture = CompletableFuture.supplyAsync(() ->
+                                    aiDocking.doDataAnalysis(goal, chartType, csvData)
+                            , threadPoolExecutor);
+                    aiFuture.orTimeout(5, TimeUnit.MINUTES);
+                    String result = aiAnalyzeRetryer.call(() -> {
+                        try {
+                            return aiFuture.get();
+                        } catch (InterruptedException | ExecutionException e) {
+                            log.error("AI处理超时");
+                        }
+                        return null;
+                    });
+                    //状态修改完毕后，调用AI进行数据处理
+//                    String result = aiDocking.doDataAnalysis(goal, chartType, csvData);
+                    AnalysisResult analysisResult = ParseAIResponse.parseResponse(result);
+                    Chart resChart = new Chart();
+                    resChart.setId(chart.getId());
+                    resChart.setStatus("succeed");
+                    resChart.setGenChart(analysisResult.getChartConfig());
+                    resChart.setGenResult(analysisResult.getAnalysis());
+                    resChart.setExecMsg("分析成功");
+                    boolean resUpdate = this.updateById(resChart);
+                    if (!resUpdate) {
+                        log.error("更新图表信息失败");
+                    }
+                    log.info("更新图表信息成功");
+                    Map<String, Object> resultData = new HashMap<>();
+                    resultData.put("genChart", analysisResult.getChartConfig());
+                    resultData.put("genResult", analysisResult.getAnalysis());
+                    wsMsg.setType("analysis_status")
+                            .setMessage("分析成功")
+                            .setStatus("succeed")
+                            .setData(resultData);
+                    webSocketServer.sendMessageToUser(userId.toString(), wsMsg);
+                } catch (TimeoutException e) {
+                    log.error("任务超时，图表ID: {}", chart.getId());
+                    // 立即更新状态为失败
+                    Chart timeoutChart = new Chart();
+                    timeoutChart.setId(chart.getId());
+                    timeoutChart.setStatus("failed");
+                    timeoutChart.setExecMsg("任务超时");
+                    this.updateById(timeoutChart);
+                    Map<String, Object> timeoutData = new HashMap<>();
+                    timeoutData.put("chartId", chart.getId());
+                    wsMsg.setType("analysis_status")
+                            .setMessage("任务超时")
+                            .setStatus("failed")
+                            .setData(timeoutData);
+                    webSocketServer.sendMessageToUser(userId.toString(), wsMsg);
+                } catch (Exception e) {
+                    log.error("分析任务执行异常，图表ID: {}", chart.getId(), e);
+                    // 更新失败状态
+                    Chart errorChart = new Chart();
+                    errorChart.setId(chart.getId());
+                    errorChart.setStatus("failed");
+                    errorChart.setExecMsg("分析失败: " + e.getMessage());
+                    this.updateById(errorChart);
+                    Map<String, Object> errorData = new HashMap<>();
+                    errorData.put("chartId", chart.getId());
+                    wsMsg.setType("analysis_status")
+                            .setMessage("分析失败")
+                            .setStatus("failed")
+                            .setData(errorData);
+                    webSocketServer.sendMessageToUser(userId.toString(), wsMsg);
+                }
+            }, threadPoolExecutor);
+        } catch (RejectedExecutionException e) {
+            log.error("任务提交被拒绝，系统繁忙，图表ID: {}", chart.getId());
+            // 立即更新状态为失败
+            Chart rejectedChart = new Chart();
+            rejectedChart.setId(chart.getId());
+            rejectedChart.setStatus("failed");
+            rejectedChart.setExecMsg("系统繁忙，请稍后再试");
+            this.updateById(rejectedChart);
+            Map<String, Object> rejectedData = new HashMap<>();
+            rejectedData.put("chartId", chart.getId());
+            wsMsg.setType("analysis_status")
+                    .setMessage("系统繁忙，请稍后再试")
+                    .setStatus("failed")
+                    .setData(rejectedData);
+            webSocketServer.sendMessageToUser(userId.toString(), wsMsg);
+        }
+        GenChartVO genChartVO = new GenChartVO();
+        genChartVO.setChartId(chart.getId());
+        genChartVO.setGenResult(chart.getGenResult());
+        genChartVO.setGenChart(chart.getGenChart());
         return genChartVO;
     }
 
@@ -173,18 +376,18 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
             log.error("图表信息不存在");
             return false;
         }
-        if(!chart.getUserId().equals(userId)){
+        if (!chart.getUserId().equals(userId)) {
             log.error("用户没有权限修改该图表信息");
             return false;
         }
         //此时图表的配置也需要重新进行更改，因为图表的类型会发生变化
-        if(!chart.getChartType().equals(chartEditDTO.getChartType())){
-            try{
+        if (!chart.getChartType().equals(chartEditDTO.getChartType())) {
+            try {
                 String res = aiDocking.doDataAnalysis(chartEditDTO.getGoal(), chartEditDTO.getChartType(), chart.getChartData());
                 AnalysisResult analysisResult = ParseAIResponse.parseResponse(res);
                 chart.setGenChart(analysisResult.getChartConfig())
                         .setGenResult(analysisResult.getAnalysis());
-            }catch (Exception e){
+            } catch (Exception e) {
                 log.error("图表配置错误,保留原配置");
                 throw new AIDockingException("图表配置错误");
             }
@@ -194,6 +397,5 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
                 .setGoal(chartEditDTO.getGoal());
         return this.updateById(chart);
     }
-
 
 }
