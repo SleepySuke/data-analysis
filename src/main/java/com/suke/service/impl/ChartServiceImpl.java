@@ -8,6 +8,8 @@ import com.suke.common.AnalysisResult;
 import com.suke.common.WebSocketMessage;
 import com.suke.config.RetryConfig;
 import com.suke.context.UserContext;
+import com.suke.datamq.MessageConsumer;
+import com.suke.datamq.MessageProducer;
 import com.suke.domain.dto.chart.ChartAddDTO;
 import com.suke.domain.dto.chart.ChartEditDTO;
 import com.suke.domain.dto.chart.ChartPageQueryDTO;
@@ -62,6 +64,9 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
     private WebSocketServer webSocketServer;
     @Autowired
     private Retryer<String> aiAnalyzeRetryer;
+
+    @Resource
+    private MessageProducer messageProducer;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -229,8 +234,8 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
             throw new FailSaveException("保存图表信息失败");
         }
         log.info("保存的图表的id：{}", chart.getId());
-        Map<String,Object> waitingMsg = new HashMap<>();
-        waitingMsg.put("chartId",chart.getId());
+        Map<String, Object> waitingMsg = new HashMap<>();
+        waitingMsg.put("chartId", chart.getId());
         wsMsg.setType("analysis_status")
                 .setMessage("正在等待处理数据")
                 .setStatus("waiting")
@@ -241,8 +246,8 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
             CompletableFuture.runAsync(() -> {
                 try {
                     log.info("开始处理数据");
-                    Map<String,Object> runningMsg = new HashMap<>();
-                    runningMsg.put("chartId",chart.getId());
+                    Map<String, Object> runningMsg = new HashMap<>();
+                    runningMsg.put("chartId", chart.getId());
                     wsMsg.setType("analysis_status")
                             .setMessage("正在处理数据")
                             .setStatus("running")
@@ -344,6 +349,73 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         genChartVO.setChartId(chart.getId());
         genChartVO.setGenResult(chart.getGenResult());
         genChartVO.setGenChart(chart.getGenChart());
+        return genChartVO;
+    }
+
+    /**
+     * mq异步分析文件,为了防止任务的丢失，在分布式情况下，需要考虑任务丢失问题
+     *
+     * @param multipartFile
+     * @param fileDTO
+     * @return
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public GenChartVO asyncAnalyze(MultipartFile multipartFile, UploadFileDTO fileDTO) {
+        log.info("文件描述：{}", fileDTO);
+        log.info("文件：{}", multipartFile);
+        if (multipartFile == null) {
+            log.error("文件为空");
+            return null;
+        }
+        if (!FileUtils.validSuffix(multipartFile)) {
+            log.error("文件格式错误");
+            return null;
+        }
+        Long userId = UserContext.getCurrentId();
+        if (userId == null) {
+            log.error("用户未登录");
+            return null;
+        }
+        String fileName = fileDTO.getFileName();
+        String goal = fileDTO.getGoal();
+        String chartType = fileDTO.getChartType();
+        if (StringUtils.isAnyBlank(fileName)) {
+            log.error("文件名称过长:{}", fileName);
+            throw new BaseException("文件名称过长");
+        }
+        if (StringUtils.isAnyBlank(goal)) {
+            log.error("分析目标为空:{}", goal);
+            throw new BaseException("分析目标为空");
+        }
+        if (StringUtils.isAnyBlank(chartType)) {
+            log.error("图表类型为空:{}", chartType);
+            throw new BaseException("图表类型为空");
+        }
+        String csvData = FileUtils.excelToCsv(multipartFile);
+        if (StringUtils.isAnyBlank(csvData)) {
+            log.error("数据为空");
+            throw new BaseException("数据为空");
+        }
+        //先保存数据，再去调用AI分析，此时AI调用变为异步调用，保存数据改为同步调用，AI调用为提交任务
+        Chart chart = new Chart();
+        //分析结果还未生成，仅保存图表名称等简单参数
+        chart.setName(fileName)
+                .setChartType(chartType)
+                .setChartData(csvData)
+                .setGoal(goal);
+        chart.setStatus("wait");
+        chart.setUserId(userId);
+        boolean save = save(chart);
+        if (!save) {
+            log.error("保存图表失败");
+            return null;
+        }
+        Long chartId = chart.getId();
+        // 发送消息
+        messageProducer.sendMessage(String.valueOf(chartId));
+        GenChartVO genChartVO = new GenChartVO();
+        genChartVO.setChartId(chart.getId());
         return genChartVO;
     }
 

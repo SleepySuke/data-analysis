@@ -174,6 +174,42 @@ public class ChartController {
     }
 
     /**
+     * 用于分布式情况下的异步生成图表信息
+     * @param multipartFile
+     * @param fileDTO
+     * @return
+     */
+    @PostMapping("/gen/async/mq")
+    public Result<GenChartVO> genAsyncMq(@RequestPart("file")MultipartFile multipartFile, UploadFileDTO fileDTO){
+        log.info("文件描述：{}",fileDTO);
+        log.info("上传的文件：{}",multipartFile);
+        Long userId = UserContext.getCurrentId();
+        // 对用户限流
+        redisUtils.doRateLimit(userId.toString());
+        if(fileDTO == null){
+            log.error("上传图表信息参数错误");
+            return Result.error(ErrorCode.PARAMS_ERROR.getMessage());
+        }
+        String fileName = fileDTO.getFileName();
+        String goal = fileDTO.getGoal();
+        String chartType = fileDTO.getChartType();
+        if(StringUtils.isAnyBlank(goal)){
+            log.error("分析目标为空:{}", goal);
+            return Result.error("分析目标为空");
+        }
+        if(StringUtils.isNotBlank(fileName) && fileName.length() > 100){
+            log.error("文件名称过长:{}", fileName);
+            return Result.error("文件名称过长");
+        }
+        if(StringUtils.isAnyBlank(chartType)){
+            log.error("图表类型为空:{}", chartType);
+            return Result.error("图表类型为空");
+        }
+        GenChartVO genChartVO = chartService.asyncAnalyze(multipartFile, fileDTO);
+        return Result.success(genChartVO);
+    }
+
+    /**
      * 获取我的图表列表
      * @param chartPageQueryDTO
      * @return

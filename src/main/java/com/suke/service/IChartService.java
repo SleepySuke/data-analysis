@@ -40,6 +40,14 @@ public interface IChartService extends IService<Chart> {
      */
     GenChartVO asyncAnalyzeFile(MultipartFile multipartFile, UploadFileDTO fileDTO);
 
+    /**
+     * 通过mq进行异步分析
+     * @param multipartFile
+     * @param fileDTO
+     * @return
+     */
+    GenChartVO asyncAnalyze(MultipartFile multipartFile, UploadFileDTO fileDTO);
+
     Page<Chart> getMyChartList(ChartPageQueryDTO chartPageQueryDTO);
 
     Boolean editChart(ChartEditDTO chartEditDTO);
