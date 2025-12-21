@@ -41,4 +41,5 @@ http://localhost:15672/mgmt
 15672 RabbitMQ web面板
 
 5672 RabbitMQ
+![输入图片说明](%E6%B5%81%E7%A8%8B%E5%9B%BE.png)
 
