@@ -31,6 +31,10 @@ public class AIDocking {
     private ChatModel qwenModel;
     @Resource(name = "qwenChatClient")
     private ChatClient qwenClient;
+
+    @Resource(name = "deepseekClient")
+    private ChatClient deepseekClient;
+
     @Autowired
     private PromptBuilder promptBuilder;
     @Autowired
@@ -78,7 +82,7 @@ public class AIDocking {
         String prompt = promptBuilder.buildPrompt(chartType)  + "分析需求：" + requirement + "\n"
                 + (StringUtils.isAnyBlank(chartType)? "图表类型：" + chartType + "\n": "")+
                 "原始数据：\n" + csvData;
-        String result = qwenClient.prompt().user(prompt).call().content();
+        String result = qwenClient.prompt().system(prompt).call().content();
         if(result == null || result.trim().isEmpty()){
             throw new AIDockingException("AI数据分析响应错误");
         }

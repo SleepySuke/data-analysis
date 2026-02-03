@@ -13,6 +13,7 @@ import com.suke.datamq.MessageProducer;
 import com.suke.domain.dto.chart.ChartAddDTO;
 import com.suke.domain.dto.chart.ChartEditDTO;
 import com.suke.domain.dto.chart.ChartPageQueryDTO;
+import com.suke.domain.dto.file.SmartFileResult;
 import com.suke.domain.dto.file.UploadFileDTO;
 import com.suke.domain.entity.Chart;
 import com.suke.domain.vo.GenChartVO;
@@ -23,19 +24,18 @@ import com.suke.mapper.ChartMapper;
 import com.suke.service.IChartService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.suke.service.IUserService;
-import com.suke.utils.AIDocking;
-import com.suke.utils.FileUtils;
-import com.suke.utils.ParseAIResponse;
-import com.suke.utils.WebSocketServer;
+import com.suke.utils.*;
 import io.netty.handler.timeout.TimeoutException;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,10 +63,18 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
     @Autowired
     private WebSocketServer webSocketServer;
     @Autowired
+    @Qualifier("aiAnalyzeRetryer")
     private Retryer<String> aiAnalyzeRetryer;
+
+    @Autowired
+    @Qualifier("syncAnalyzeRetryer")
+    private Retryer<String> syncAnalyzeRetryer;
 
     @Resource
     private MessageProducer messageProducer;
+
+    @Autowired
+    private MinioUtil minioUtil;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -122,6 +130,13 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
             log.error("文件格式错误");
             return null;
         }
+
+        //限制文件大小为100mb
+        long maxSizeMB = 100;
+        if (!FileUtils.validFileSize(multipartFile, maxSizeMB)) {
+            log.error("文件过大，最大支持{}MB", maxSizeMB);
+            return null;
+        }
         Long userId = UserContext.getCurrentId();
         if (userId == null) {
             log.error("用户未登录");
@@ -142,19 +157,126 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
             log.error("图表类型为空:{}", chartType);
             throw new BaseException("图表类型为空");
         }
-        String csvData = FileUtils.excelToCsv(multipartFile);
-        if (StringUtils.isAnyBlank(csvData)) {
+
+        String csv = null;
+        String minioPath = null;
+        int sampleRows = 2000;
+        //对于小文件10mb可以直接处理
+        long fileSizeMB = multipartFile.getSize() / (1024 * 1024);
+        log.info("文件大小:{}MB", multipartFile.getSize() / (1024 * 1024));
+        if(multipartFile.getSize() < 1024 * 1024 * 10){
+            csv = FileUtils.excelToCsv(multipartFile);
+            //检测转换为csv文件后的大小，如果大于1mb则上传至minio中
+            if(csv.getBytes().length > 1024 * 1024){
+                //上传至minio中，通过时间戳进行识别
+                String csvFileName = "csv/" + userId + "/" + System.currentTimeMillis() + ".csv";
+                minioPath = minioUtil.uploadCsvFile(csv, csvFileName);
+            }
+        }else{
+            log.info("文件过大，开始进行采样处理->{}MB", multipartFile.getSize() / (1024 * 1024));
+            try{
+                //默认的采用处理
+                if(fileDTO.getEnableSampling() != null && fileDTO.getEnableSampling() && fileDTO.getSampleRows() > 0){
+                    sampleRows = fileDTO.getSampleRows();
+                    csv = FileUtils.smartSampling(multipartFile, minioUtil, sampleRows);
+                    log.info("采样处理{}行的结果:{}",sampleRows, csv);
+                }else{
+                    if(fileSizeMB > 50){
+                        sampleRows = 1000; // 超大文件采样1000行
+                    } else if(fileSizeMB > 20){
+                        sampleRows = 2000; // 大文件采样2000行
+                    } else {
+                        sampleRows = 3000; // 中等文件采样3000行
+                    }
+                    SmartFileResult result = FileUtils.smartProcessLargeFile(
+                            multipartFile,
+                            minioUtil,
+                            sampleRows,
+                            true // 启用流式处理到MinIO
+                    );
+
+                    csv = result.getSampledData();
+                    minioPath = result.getOriginalMinioPath();
+
+                    // 如果采样数据也很大，使用采样数据的MinIO路径
+                    if(StringUtils.isNotBlank(result.getSampledMinioPath())){
+                        minioPath = result.getSampledMinioPath();
+                    }
+
+                    log.info("大文件智能处理完成，总行数: {}, 采样行数: {}",
+                            result.getTotalRows(), FileUtils.countLines(csv));
+//                    //先上传至minio再进行处理
+//                    String originFileName = "original/" + userId + "/" + System.currentTimeMillis() + "_" + multipartFile.getOriginalFilename();
+//                    minioPath = minioUtil.uploadFile(multipartFile, originFileName);
+//                    //流式处理转为csv并且存到minio
+//                    String csvFileName =FileUtils.excelToCsvWithStream(multipartFile, minioUtil, 1000);
+//                    csv = FileUtils.smartSampling(multipartFile, minioUtil, 1000);
+//                    minioPath = csvFileName;
+                }
+            }catch (Exception e){
+                log.error("文件处理失败");
+                throw new BaseException("文件处理失败");
+            }
+        }
+        int length = csv.getBytes().length;
+        log.info("文件大小->{}", length);
+        if (StringUtils.isAnyBlank(csv)) {
             log.error("数据为空");
             throw new BaseException("数据为空");
         }
-        String result = aiDocking.doDataAnalysis(goal, chartType, csvData);
-        log.info("分析结果:{}", result);
+
+        //估计token数量
+        int estimatedTokens = estimateTokens(csv, goal, chartType);
+        log.info("估计token数量: {}", estimatedTokens);
+
+        if(estimatedTokens > 5000){
+            log.warn("使用token数量过大 -> {}", estimatedTokens);
+        }
+
+
+        String result = null;
+        try {
+            String res = csv;
+            // 使用重试器调用AI分析
+            result = syncAnalyzeRetryer.call(() -> {
+                try {
+                    log.info("调用AI进行分析，数据大小: {} 字符", res.length());
+                    return aiDocking.doDataAnalysis(goal, chartType, res);
+                } catch (Exception e) {
+                    log.error("AI分析调用失败: {}", e.getMessage());
+
+                    // 检查是否为token超限，如果是，抛出特定异常让重试器知道不重试
+                    if (e.getMessage() != null &&
+                            (e.getMessage().contains("token") ||
+                                    e.getMessage().contains("Token"))) {
+                        throw new AIDockingException("数据量过大导致token超限，建议启用采样功能或减少采样行数");
+                    }
+
+                    // 检查是否为参数错误，如果是，抛出异常让重试器知道不重试
+                    if (e.getMessage() != null &&
+                            e.getMessage().contains("参数错误")) {
+                        throw new RuntimeException("参数错误: " + e.getMessage());
+                    }
+
+                    // 其他异常直接抛出，重试器会根据异常类型决定是否重试
+                    throw e;
+                }
+            });
+            log.info("分析结果:{}", result);
+        } catch (Exception e) {
+            log.error("AI分析失败 token超限", e);
+            // 如果是Token超限，建议用户启用采样
+            if (e.getMessage().contains("token") || e.getMessage().contains("Token")) {
+                return null;
+            }
+            return null;
+        }
         AnalysisResult analysisResult = ParseAIResponse.parseResponse(result);
         Chart chart = new Chart();
         chart.setName(fileName)
                 .setGoal(goal)
                 .setChartType(chartType)
-                .setChartData(csvData)
+                .setChartData(csv)
                 .setGenChart(analysisResult.getChartConfig())//图表配置
                 .setGenResult(analysisResult.getAnalysis())//图表结果
                 .setUserId(userId)
@@ -162,6 +284,13 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
                 .setExecMsg("分析成功");
         ;
         log.info("保存的图表信息：{}", chart);
+
+        //csv数据文件过大时存放至minio中，返回路径
+        if(StringUtils.isNotBlank(minioPath)){
+            chart.setMinioPath(minioPath);
+            chart.setChartData("文件数据过大，才minio中");
+        }
+
         boolean save = this.save(chart);
         if (!save) {
             throw new FailSaveException("保存图表信息失败");
@@ -468,6 +597,19 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
                 .setName(chartEditDTO.getName())
                 .setGoal(chartEditDTO.getGoal());
         return this.updateById(chart);
+    }
+
+    /**
+     * 估计token数量
+     */
+    private int estimateTokens(String csv, String goal, String chartType) {
+        // 简单估算：中文大约1个字符1-2个token
+        int csvTokens = csv.length() * 2;
+        int goalTokens = goal.length() * 2;
+        int chartTypeTokens = chartType.length() * 2;
+
+        // 加上提示词模板的大概token数（约500）
+        return csvTokens + goalTokens + chartTypeTokens + 500;
     }
 
 }

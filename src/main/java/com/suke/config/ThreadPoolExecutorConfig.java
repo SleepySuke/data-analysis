@@ -49,7 +49,7 @@ public class ThreadPoolExecutorConfig {
           TimeUnit.SECONDS,
           new ArrayBlockingQueue<>(10),
           threadFactory,
-          new ThreadPoolExecutor.AbortPolicy()
+          new ThreadPoolExecutor.CallerRunsPolicy()
         );
         return threadPoolExecutor;
     }

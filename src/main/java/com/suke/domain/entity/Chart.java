@@ -78,6 +78,11 @@ public class Chart implements Serializable {
     private Long userId;
 
     /**
+     * 文件路径
+     */
+    private String minioPath;
+
+    /**
      * 创建时间
      */
     @TableField(fill = FieldFill.INSERT,value = "createTime")

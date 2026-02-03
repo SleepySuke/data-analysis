@@ -14,7 +14,7 @@ public class Init {
     public static void main(String[] args) {
         try {
             ConnectionFactory connectionFactory = new ConnectionFactory();
-            connectionFactory.setHost("localhost");
+            connectionFactory.setHost("10.65.119.133");
             Connection connection = connectionFactory.newConnection();
             Channel channel = connection.createChannel();
             String queueName = BIConstant.BI_QUEUE;

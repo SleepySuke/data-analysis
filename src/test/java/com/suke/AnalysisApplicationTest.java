@@ -1,25 +1,63 @@
 package com.suke;
 
 import com.suke.common.AnalysisResult;
+import com.suke.constant.BIConstant;
+import com.suke.context.UserContext;
+import com.suke.datamq.Init;
+import com.suke.datamq.MessageProducer;
+import com.suke.domain.dto.file.UploadFileDTO;
+import com.suke.domain.dto.user.UserLoginDTO;
+import com.suke.domain.dto.user.UserRegisterDTO;
+import com.suke.domain.entity.User;
+import com.suke.domain.vo.GenChartVO;
+import com.suke.domain.vo.LoginUserVO;
+import com.suke.service.IChartService;
+import com.suke.service.IUserService;
 import com.suke.utils.AIDocking;
 import com.suke.utils.FileUtils;
 import com.suke.utils.ParseAIResponse;
 import com.suke.utils.RedisUtils;
+import io.minio.MinioClient;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.aspectj.lang.annotation.Before;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.redisson.Redisson;
+import org.redisson.config.Config;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.event.annotation.BeforeTestMethod;
+import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 /**
  * @author 自然醒
@@ -28,6 +66,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 @SpringBootTest
 @Slf4j
 public class AnalysisApplicationTest {
+
+    @Resource
+    private MessageProducer messageProducer;
 
     @Resource(name = "qwenChatClient")
     private ChatClient qwenClient;
@@ -38,6 +79,97 @@ public class AnalysisApplicationTest {
     private RedisUtils redisUtils;
     @Autowired
     private ThreadPoolExecutor threadPoolExecutor;
+
+    @Autowired
+    private VectorStore vectorStore;
+
+    @Autowired
+    private MinioClient minioClient;
+
+    @Autowired
+    private Debug debug;
+
+    @Autowired
+    private IChartService chartService;
+
+    @Autowired
+    private IUserService userService;
+
+    @BeforeEach
+    void login(){
+        UserLoginDTO userLoginDTO = new UserLoginDTO();
+        userLoginDTO.setUserAccount("admin");
+        userLoginDTO.setUserPassword("admin123456");
+        LoginUserVO loginUserVO = userService.userLogin(userLoginDTO, null);
+        UserContext.setCurrentId(loginUserVO.getId());
+        assertNotNull(loginUserVO);
+        System.out.println(loginUserVO);
+    }
+
+
+
+
+    @Test
+    void init(){
+        UserRegisterDTO userRegisterDTO = new UserRegisterDTO();
+        userRegisterDTO.setUserAccount("admin");
+        userRegisterDTO.setUserPassword("admin123456");
+        userRegisterDTO.setCheckPassword("admin123456");
+        userService.userRegister(userRegisterDTO, null);
+    }
+
+
+
+    @Test
+    void testSmallFileUpload() {
+        // 创建测试文件（1MB）
+        MultipartFile mockFile = ExcelTest.createSmallExcelFile();
+
+        UploadFileDTO dto = new UploadFileDTO();
+        dto.setFileName("测试文件");
+        dto.setGoal("分析销售额趋势");
+        dto.setChartType("line");
+        dto.setEnableSampling(false);
+
+
+
+        GenChartVO result = chartService.analysisFile(mockFile, dto);
+
+        assertNotNull(result);
+        assertNotNull(result.getChartId());
+    }
+
+    @Test
+    void testBigFileUpload() {
+        MultipartFile mockFile = ExcelTest.createLargeExcelFile(30);
+
+        UploadFileDTO dto = new UploadFileDTO();
+        dto.setFileName("大型测试文件");
+        dto.setGoal("分析各个城市工资情况");
+        dto.setChartType("line");
+
+        GenChartVO result = chartService.analysisFile(mockFile, dto);
+
+        assertNotNull(result);
+        assertNotNull(result.getChartId());
+    }
+
+
+
+    @Test
+    void MinioTest(){
+        log.info("Minio测试");
+        System.out.println(minioClient);
+    }
+
+    @Test
+    void RAGTest(){
+        List<Document> documents = List.of(new Document("The World is Big and Salvation Lurks Around the Corner"));
+        vectorStore.add(documents);
+        List<Document> results = this.vectorStore.similaritySearch(SearchRequest.builder().query("Spring").topK(5).build());
+        System.out.println(results);
+    }
+
     @Test
     void FileUtilsTest() {
         FileUtils.excelToCsv(null);
@@ -143,4 +275,5 @@ public class AnalysisApplicationTest {
         }
 
     }
+
 }
