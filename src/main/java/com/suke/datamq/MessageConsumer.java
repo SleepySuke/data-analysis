@@ -49,12 +49,21 @@ public class MessageConsumer {
         log.info("receiveMessage message = {}", message);
         if (message == null) {
             log.error("接收到的消息为空");
+            channel.basicAck(deliveryTag, false);
             return;
         }
-        Long chartId = Long.parseLong(message);
+        Long chartId;
+        try {
+            chartId = Long.parseLong(message);
+        } catch (NumberFormatException e) {
+            log.error("消息格式错误，无法解析chartId: {}", message);
+            channel.basicAck(deliveryTag, false);
+            return;
+        }
         Chart chart = chartService.getById(chartId);
         if (chart == null) {
-            log.error("图表不存在");
+            log.error("图表不存在, chartId={}", chartId);
+            channel.basicAck(deliveryTag, false);
             return;
         }
         Chart updateChart = new Chart();
@@ -67,34 +76,39 @@ public class MessageConsumer {
             handleChartUpdateError(updateChart.getId(), "更新图表失败");
             return;
         }
-        String response = aiDocking.doDataAnalysis(message, updateChart.getChartType(), updateChart.getChartData());
-        AnalysisResult analysisResult = ParseAIResponse.parseResponse(response);
-        if (analysisResult == null) {
-            handleChartUpdateError(updateChart.getId(), "分析结果为空");
-            return;
-        }
-        Chart resChart = new Chart();
-        resChart.setId(updateChart.getId());
-        resChart.setGenChart(analysisResult.getChartConfig());
-        resChart.setGenResult(analysisResult.getAnalysis());
-        resChart.setStatus("succeed");
-        resChart.setExecMsg("分析成功");
-        boolean updateResult1 = chartService.updateById(resChart);
-        if (!updateResult1) {
+        try {
+            String response = aiDocking.doDataAnalysis(chart.getGoal(), chart.getChartType(), chart.getChartData());
+            AnalysisResult analysisResult = ParseAIResponse.parseResponse(response);
+            if (analysisResult == null) {
+                handleChartUpdateError(updateChart.getId(), "分析结果为空");
+                channel.basicAck(deliveryTag, false);
+                return;
+            }
+            Chart resChart = new Chart();
+            resChart.setId(updateChart.getId());
+            resChart.setGenChart(analysisResult.getChartConfig());
+            resChart.setGenResult(analysisResult.getAnalysis());
+            resChart.setStatus("succeed");
+            resChart.setExecMsg("分析成功");
+            boolean updateResult1 = chartService.updateById(resChart);
+            if (!updateResult1) {
+                channel.basicNack(deliveryTag, false, false);
+                handleChartUpdateError(updateChart.getId(), "更新图表失败");
+                return;
+            }
+            channel.basicAck(deliveryTag, false);
+        } catch (Exception e) {
+            log.error("AI分析异常, chartId={}: {}", chart.getId(), e.getMessage(), e);
+            handleChartUpdateError(chart.getId(), "分析失败: " + e.getMessage());
             channel.basicNack(deliveryTag, false, false);
-            handleChartUpdateError(updateChart.getId(), "更新图表失败");
         }
-        // 投递标签是一个数字标识,它在消息消费者接收到消息后用于向RabbitMQ确认消息的处理状态。
-        // 通过将投递标签传递给channel.basicAck(deliveryTag, false)方法,可以告知RabbitMQ该消息已经成功处理,可以进行确认和从队列中删除。
-        // 手动确认消息的接收，向RabbitMQ发送确认消息
-        channel.basicAck(deliveryTag, false);
     }
 
     private void handleChartUpdateError(long chartId, String execMessage) {
         Chart updateChartResult = new Chart();
         updateChartResult.setId(chartId);
         updateChartResult.setStatus("failed");
-        updateChartResult.setExecMsg("execMessage");
+        updateChartResult.setExecMsg(execMessage);
         boolean updateResult = chartService.updateById(updateChartResult);
         if (!updateResult) {
             log.error("更新图表失败状态失败" + chartId + "," + execMessage);

@@ -31,6 +31,7 @@ import org.aspectj.lang.annotation.Before;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.redisson.Redisson;
 import org.redisson.config.Config;
@@ -68,6 +69,7 @@ import static org.mockito.Mockito.when;
  */
 @SpringBootTest
 @Slf4j
+@Tag("integration")
 public class AnalysisApplicationTest {
 
     @Resource

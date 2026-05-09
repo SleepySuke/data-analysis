@@ -2,6 +2,7 @@ package com.suke.controller;
 
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.suke.annotation.AuthCheck;
 import com.suke.common.ErrorCode;
 import com.suke.common.Result;
 import com.suke.context.UserContext;
@@ -77,6 +78,11 @@ public class ChartController {
             log.error("获取图表信息失败");
             return Result.error(ErrorCode.OPERATION_ERROR.getMessage());
         }
+        Long currentUserId = UserContext.getCurrentId();
+        if (!chartVO.getUserId().equals(currentUserId)) {
+            log.error("用户无权限访问该图表");
+            return Result.error(ErrorCode.NO_AUTH_ERROR.getMessage());
+        }
         log.info("获取图表信息成功：{}",chartVO);
         return Result.success(chartVO);
     }
@@ -98,6 +104,11 @@ public class ChartController {
             log.error("查询图表失败");
             return Result.error(ErrorCode.OPERATION_ERROR.getMessage());
         }
+        Long currentUserId = UserContext.getCurrentId();
+        if (!chartVO.getUserId().equals(currentUserId)) {
+            log.error("用户无权限编辑该图表");
+            return Result.error(ErrorCode.NO_AUTH_ERROR.getMessage());
+        }
         return Result.success(chartVO);
     }
 
@@ -107,6 +118,7 @@ public class ChartController {
      * @param fileDTO
      * @return
      */
+    @AuthCheck
     @PostMapping("/gen")
     public Result<GenChartVO> uploadChart(@RequestPart("file")MultipartFile multipartFile, UploadFileDTO fileDTO){
         log.info("文件描述：{}",fileDTO);
@@ -143,6 +155,7 @@ public class ChartController {
      * @param fileDTO
      * @return
      */
+    @AuthCheck
     @PostMapping("/gen/async")
     public Result<GenChartVO> genAsync(@RequestPart("file")MultipartFile multipartFile, UploadFileDTO fileDTO){
         log.info("文件描述：{}",fileDTO);
@@ -179,6 +192,7 @@ public class ChartController {
      * @param fileDTO
      * @return
      */
+    @AuthCheck
     @PostMapping("/gen/async/mq")
     public Result<GenChartVO> genAsyncMq(@RequestPart("file")MultipartFile multipartFile, UploadFileDTO fileDTO){
         log.info("文件描述：{}",fileDTO);
@@ -214,6 +228,7 @@ public class ChartController {
      * @param chartPageQueryDTO
      * @return
      */
+    @AuthCheck
     @PostMapping("/my/list/page")
     public Result<Page<Chart>> getMyChartList(@RequestBody ChartPageQueryDTO chartPageQueryDTO){
         log.info("获取我的图表列表：{}",chartPageQueryDTO);
@@ -231,6 +246,7 @@ public class ChartController {
      * @param chartEditDTO
      * @return
      */
+    @AuthCheck
     @PostMapping("/editChart")
     public Result editMyChart(@RequestBody ChartEditDTO chartEditDTO){
         log.info("修改我的图表信息：{}",chartEditDTO);

@@ -35,7 +35,6 @@ public class SaaLLMConfig {
 //    private String baseUrl;
     @Bean(name = "deepseek")
     public ChatModel deepseekModel(){
-        log.info("ApiKey -> {}", apiKey);
         return DashScopeChatModel.builder()
                 .dashScopeApi(DashScopeApi.builder().apiKey(apiKey).build())
                 .defaultOptions(DashScopeChatOptions.builder().withModel(DEEPSEEK_MODEL).build())

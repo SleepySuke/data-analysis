@@ -21,6 +21,8 @@
 .claude/agent-memory
 .claude/agents
 
+.codex
+
 prompts/
 
 # Maven
@@ -106,6 +108,9 @@ application-dev.properties
 application-local.properties
 application-test.properties
 application-prod.properties
+
+application-*.yaml
+
 *.env
 .env
 *.secret
@@ -184,12 +189,15 @@ generated/
 *.gen
 *.template
 
-# 本地覆盖配置（如 application.yml）
+# 本地覆盖配置
 application.yml
-application-*.yml
-application-*.yaml
 bootstrap-*.yml
 bootstrap-*.yaml
+
+# 允许多环境配置模板入库（含敏感占位符，需替换后使用）
+# application-dev.yaml
+# application-local.yaml
+# application-prod.yaml
 
 # 避免提交 IDE 调试配置（按需）
 *.launch

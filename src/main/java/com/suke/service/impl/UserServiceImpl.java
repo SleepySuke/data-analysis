@@ -54,7 +54,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     public LoginUserVO userLogin(UserLoginDTO userLoginDTO, HttpServletRequest request) {
         String userAccount = userLoginDTO.getUserAccount();
         String userPassword = userLoginDTO.getUserPassword();
-        log.info("用户登录：{},{}", userAccount, userPassword);
+        log.info("用户登录：{}", userAccount);
         if (StringUtils.isAnyBlank(userAccount, userPassword)) {
             log.error("登录参数为空");
             throw new FailLoginException(ErrorCode.PARAMS_ERROR.getMessage());
@@ -68,7 +68,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             throw new FailLoginException(ErrorCode.PARAMS_ERROR.getMessage());
         }
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userAccount", userAccount);
+        queryWrapper.eq("user_account", userAccount);
         User user = userMapper.selectOne(queryWrapper);
         if (user == null || user.equals("")) {
             log.error("用户不存在");
@@ -100,7 +100,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         String userAccount = userRegisterDTO.getUserAccount();
         String userPassword = userRegisterDTO.getUserPassword();
         String checkPassword = userRegisterDTO.getCheckPassword();
-        log.info("用户注册：{},{},{}", userAccount, userPassword, checkPassword);
+        log.info("用户注册：{}", userAccount);
         if (StringUtils.isAnyBlank(userAccount, userPassword, checkPassword)) {
             log.error("注册参数为空");
             throw new FailRegisterException(ErrorCode.PARAMS_ERROR.getMessage());
@@ -120,7 +120,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         //查询账户是否存在，使用synchronized进行同步搜索，防止重复注册账号
         synchronized (userAccount.intern()) {
             QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-            queryWrapper.eq("userAccount", userAccount);
+            queryWrapper.eq("user_account", userAccount);
             long count = userMapper.selectCount(queryWrapper);
             if (count > 0) {
                 log.error("用户已存在");

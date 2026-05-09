@@ -51,9 +51,10 @@ public class JwtTokenInterceptor implements HandlerInterceptor {
         //从请求头中读取JWT令牌中token
         String token = request.getHeader(jwtProperties.getTokenName());
 //        log.info("JWT令牌：{}，请求头名称：{}", token, jwtProperties.getTokenName());
-        //token为空 此时可能是不需要令牌的接口
+        //token为空，未登录，拒绝访问
         if(StringUtils.isAnyBlank(token)){
-            return true;
+            response.setStatus(401);
+            return false;
         }
         // 去除Bearer前缀
         if (token.startsWith("Bearer ")) {

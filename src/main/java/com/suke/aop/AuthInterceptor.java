@@ -48,8 +48,11 @@ public class AuthInterceptor {
         if(userId != null){
             loginUser = userService.getById(userId);
         }
-        //无需权限 放行
-        if (mustRole == null) {
+        //无需权限 放行（mustRole为空表示仅需登录，不检查角色）
+        if (mustRole == null || mustRole.isEmpty()) {
+            if (loginUser == null) {
+                throw new RuntimeException(ErrorCode.NOT_LOGIN_ERROR.getMessage());
+            }
             return joinPoint.proceed();
         }
         //权限验证 必须有权限才可以通过

@@ -58,7 +58,7 @@ public class ParseAIResponse {
      */
     private static String extractAnalysis(String response){
         //提取[数据分析结论部分]
-        Pattern pattern = Pattern.compile("\"【数据分析结论】\\\\s*(.*?)(?=【可视化图表代码】|$)\"", Pattern.DOTALL);
+        Pattern pattern = Pattern.compile("【数据分析结论】\\s*(.*?)(?=【可视化图表代码】|$)", Pattern.DOTALL);
         Matcher matcher = pattern.matcher(response);
         if(matcher.find()){
             return matcher.group(1).trim();
@@ -175,8 +175,15 @@ public class ParseAIResponse {
             JSON.parseObject(jsonStr);
             return jsonStr;
         }catch (Exception e){
-            log.warn("图表格式JSON格式不正确,进行修正：{}",e.getMessage());
-            return fixJsonFormat(jsonStr);
+            log.warn("图表格式JSON格式不正确,尝试修正：{}",e.getMessage());
+            String fixed = fixJsonFormat(jsonStr);
+            try {
+                JSON.parseObject(fixed);
+                return fixed;
+            } catch (Exception e2) {
+                log.warn("JSON修正失败,使用默认配置");
+                return createDefaultChartConfig();
+            }
         }
     }
 
