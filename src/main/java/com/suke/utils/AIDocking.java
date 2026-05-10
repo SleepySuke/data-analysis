@@ -75,14 +75,19 @@ public class AIDocking {
      */
     public String doDataAnalysis(String requirement,String chartType,String csvData){
         log.info("分析需求：{}", requirement);
-        log.info("原始数据：{}", csvData);
+        log.debug("原始数据：{}", csvData);
         if(!chartTypeTemplateConfig.supportsChartType(chartType)){
             throw new AIDockingException("不支持的图表类型");
         }
-        String prompt = promptBuilder.buildPrompt(chartType)  + "分析需求：" + requirement + "\n"
-                + (StringUtils.isAnyBlank(chartType)? "图表类型：" + chartType + "\n": "")+
+        String systemPrompt = promptBuilder.buildPrompt(chartType);
+        String userMessage = "分析需求：" + requirement + "\n" +
+                (StringUtils.isNotBlank(chartType) ? "图表类型：" + chartType + "\n" : "") +
                 "原始数据：\n" + csvData;
-        String result = qwenClient.prompt().system(prompt).call().content();
+        String result = qwenClient.prompt()
+                .system(systemPrompt)
+                .user(userMessage)
+                .call()
+                .content();
         if(result == null || result.trim().isEmpty()){
             throw new AIDockingException("AI数据分析响应错误");
         }

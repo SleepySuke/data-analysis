@@ -309,7 +309,6 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
      * @param fileDTO
      * @return
      */
-    @Transactional(rollbackFor = Exception.class)
     @Override
     public GenChartVO asyncAnalyzeFile(MultipartFile multipartFile, UploadFileDTO fileDTO) {
         log.info("文件描述：{}", fileDTO);
@@ -446,7 +445,6 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
      * @param fileDTO
      * @return
      */
-    @Transactional(rollbackFor = Exception.class)
     @Override
     public GenChartVO asyncAnalyze(MultipartFile multipartFile, UploadFileDTO fileDTO) {
         log.info("文件描述：{}", fileDTO);

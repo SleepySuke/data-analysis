@@ -40,21 +40,17 @@ public class WebSocketServer {
         log.info("当前连接数: {}", webSocketMap.size());
         log.info("当前连接用户: {}", webSocketMap.keySet());
 
-        //查看当前用户是否已经存在
-        if(webSocketMap.containsKey(id)){
-            //如果已经存在相同的用户则将旧连接移除
-            WebSocketServer oldServer = webSocketMap.get(id);
-            if(oldServer.session != null && oldServer.session.isOpen()){
+        // 原子操作：同一用户重复连接时关闭旧连接并替换
+        webSocketMap.compute(id, (key, oldServer) -> {
+            if (oldServer != null && oldServer.session != null && oldServer.session.isOpen()) {
                 try {
                     oldServer.session.close();
                 } catch (Exception e) {
                     log.error("关闭旧连接失败", e);
                 }
             }
-            webSocketMap.remove(id);
-        }
-        //添加新的连接
-        webSocketMap.put(id, this);
+            return this;
+        });
         log.info("用户 {} 的连接已添加到Map，当前Map大小: {}", id, webSocketMap.size());
 
         // 发送 JSON 格式的连接成功消息
@@ -115,6 +111,7 @@ public class WebSocketServer {
     @OnError
     public void onError(Throwable error){
         log.error("发生错误:{}",error);
+        webSocketMap.remove(id);
     }
 
     public void sendMessage(String message){

@@ -126,7 +126,7 @@ public class ParseAIResponse {
             return matcher.group(1).trim();
         }
         //没有json代码块则尝试提取json代码块
-        pattern = Pattern.compile("\\{.*\"xAxis\".*\\}", Pattern.DOTALL);
+        pattern = Pattern.compile("\\{.*?\"xAxis\".*?\\}", Pattern.DOTALL);
         matcher = pattern.matcher(response);
         if(matcher.find()){
             return matcher.group(0).trim();

@@ -150,4 +150,36 @@ class ParseAIResponseTest {
         assertNotNull(result.getChartConfig());
         assertTrue(result.getChartConfig().contains("title"), "无JSON时应返回默认配置");
     }
+
+    // ========== Bug #18: Greedy regex matches too much ==========
+
+    @Test
+    @DisplayName("响应中包含多个JSON对象时贪婪正则不应吞掉所有内容")
+    void parseResponse_multipleJsonObjects_shouldExtractCorrectOne() {
+        // Simulate a response where AI returns explanation text with embedded JSON-like
+        // structures followed by the actual chart config
+        String response = """
+            【数据分析结论】
+            数据分析完成。各项指标如下：
+            第一个系列数据最大值为150
+            第二个系列数据最大值为200
+            【可视化图表代码】
+            ```json
+            {"title":{"text":"对比图"},"xAxis":{"type":"category","data":["A","B"]},"series":[{"type":"bar","data":[150,200]}]}
+            ```
+
+            补充说明：另一个配置 {"title":{"text":"补充"},"xAxis":{"type":"category","data":[]},"series":[]}
+            """;
+
+        AnalysisResult result = ParseAIResponse.parseResponse(response);
+
+        assertNotNull(result);
+        assertNotNull(result.getChartConfig());
+        // Should extract the first (correct) chart config from ```json block
+        assertTrue(result.getChartConfig().contains("对比图"),
+                "Should extract the first chart config, not greedily match to the last one");
+        // Should NOT contain content from the second JSON
+        assertFalse(result.getChartConfig().contains("补充"),
+                "Greedy regex should not merge multiple JSON objects");
+    }
 }

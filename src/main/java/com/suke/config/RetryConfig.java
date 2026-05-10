@@ -71,7 +71,8 @@ public class RetryConfig {
             return isRetryableNetworkException(throwable);
         }
         // 参数错误不重试
-        if (throwable.getMessage() != null && throwable.getMessage().contains("参数错误")) {
+        String message = throwable.getMessage();
+        if (message != null && message.contains("参数错误")) {
             return false;
         }
         // 只有网络类异常才重试

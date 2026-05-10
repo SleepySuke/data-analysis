@@ -169,4 +169,40 @@ class RetryConfigTest {
         assertEquals("成功", result);
         assertEquals(2, counter.get());
     }
+
+    // ========== #19: NPE when exception message is null ==========
+
+    @Test
+    @DisplayName("异常message为null时不应NPE")
+    void retryer_nullMessage_shouldNotThrowNPE() {
+        Retryer<String> retryer = retryConfig.syncAnalyzeRetryer();
+
+        // Exception with null message should not cause NPE in isRetryable
+        assertDoesNotThrow(() -> {
+            try {
+                retryer.call(() -> {
+                    throw new RuntimeException((String) null);
+                });
+            } catch (ExecutionException e) {
+                // Expected - no retry since it's not a network exception
+                assertNotNull(e.getCause());
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("异常无message构造函数时不应NPE")
+    void retryer_noMessageException_shouldNotThrowNPE() {
+        Retryer<String> retryer = retryConfig.aiAnalyzeRetryer();
+
+        assertDoesNotThrow(() -> {
+            try {
+                retryer.call(() -> {
+                    throw new ArithmeticException();
+                });
+            } catch (ExecutionException e) {
+                assertNotNull(e.getCause());
+            }
+        });
+    }
 }
