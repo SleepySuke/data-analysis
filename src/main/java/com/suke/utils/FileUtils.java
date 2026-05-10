@@ -43,8 +43,11 @@ public class FileUtils {
         SmartFileResult result = new SmartFileResult();
 
         try {
-            // 1. 先读取表头
-            List<Map<Integer, String>> headerData = EasyExcel.read(multipartFile.getInputStream())
+            // 1. 缓存文件字节数组，避免多次调用 getInputStream()
+            byte[] fileBytes = multipartFile.getBytes();
+
+            // 2. 先读取表头
+            List<Map<Integer, String>> headerData = EasyExcel.read(new ByteArrayInputStream(fileBytes))
                     .excelType(ExcelTypeEnum.XLSX)
                     .sheet()
                     .headRowNumber(0)
@@ -78,7 +81,7 @@ public class FileUtils {
             List<Map<Integer, String>> allRowsForSample = new ArrayList<>();
 
             // 使用流式读取进行智能采样
-            EasyExcel.read(multipartFile.getInputStream(), new AnalysisEventListener<Map<Integer, String>>() {
+            EasyExcel.read(new ByteArrayInputStream(fileBytes), new AnalysisEventListener<Map<Integer, String>>() {
                 private final List<Map<Integer, String>> cachedDataList = new ArrayList<>();
                 private int batchCount = 0;
 
@@ -204,12 +207,15 @@ public class FileUtils {
         }
 
         // 如果还不够，随机补充
-        while (sampledRows.size() < targetSampleRows && sampledRows.size() < totalRows) {
+        int maxAttempts = totalRows * 3;
+        int attempts = 0;
+        while (sampledRows.size() < targetSampleRows && attempts < maxAttempts) {
             int randomIndex = random.nextInt(totalRows);
             List<String> randomRow = convertRowToList(allRows.get(randomIndex));
             if (!sampledRows.contains(randomRow)) {
                 sampledRows.add(randomRow);
             }
+            attempts++;
         }
 
         log.info("分层采样完成: 总行数={}, 采样行数={}", totalDataRows, sampledRows.size());
@@ -274,7 +280,7 @@ public class FileUtils {
      * @return
      */
     public static boolean validSuffix(MultipartFile multipartFile) {
-        List<String> list = Arrays.asList("xlsx", "xls");
+        List<String> list = Arrays.asList("xlsx");
         //获取到文件名
         String originalFilename = multipartFile.getOriginalFilename();
         if (StringUtils.isAnyBlank(originalFilename)) {
@@ -293,93 +299,6 @@ public class FileUtils {
             return false;
         }
         return multipartFile.getSize() <= maxSize * 1024 * 1024;
-    }
-
-    /**
-     * 读取CSV文件内容
-     */
-    private static String readCsvFile(InputStream inputStream) {
-        try {
-            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line).append("\n");
-            }
-            return sb.toString();
-        } catch (IOException e) {
-            log.error("CSV文件读取失败", e);
-            throw new RuntimeException("CSV文件读取失败");
-        }
-    }
-
-
-    /**
-     * 大excel文件转换成csv文件
-     *
-     * @param multipartFile
-     * @return
-     */
-    public static String excelToCsvWithStream(MultipartFile multipartFile, MinioUtil minioUtil, int batchSize) {
-        String csvFileName = multipartFile.getOriginalFilename().replaceAll("\\.(xlsx|xls)$", ".csv");
-        csvFileName = "csv/" + UUID.randomUUID() + "_" + csvFileName;
-
-        try {
-            // 使用临时文件
-            File tempFile = File.createTempFile("temp_csv_", ".csv");
-            BufferedWriter writer = new BufferedWriter(new FileWriter(tempFile));
-
-            // 写入表头
-            List<Map<Integer, String>> headerData = EasyExcel.read(multipartFile.getInputStream())
-                    .excelType(ExcelTypeEnum.XLSX)
-                    .sheet()
-                    .headRowNumber(0)
-                    .doReadSync();
-
-            if (!CollUtil.isEmpty(headerData)) {
-                writer.write(convertRowToCsvLine(headerData.get(0)));
-                writer.newLine();
-            }
-
-            // 流式读取数据
-            EasyExcel.read(multipartFile.getInputStream(), new AnalysisEventListener<Map<Integer, String>>() {
-                private final List<Map<Integer, String>> cachedDataList = new ArrayList<>();
-
-                @Override
-                public void invoke(Map<Integer, String> data, AnalysisContext context) {
-                    cachedDataList.add(data);
-                    if (cachedDataList.size() >= batchSize) {
-                        writeBatchToCsv(cachedDataList, writer);
-                        cachedDataList.clear();
-                    }
-                }
-
-                @Override
-                public void doAfterAllAnalysed(AnalysisContext context) {
-                    if (!cachedDataList.isEmpty()) {
-                        writeBatchToCsv(cachedDataList, writer);
-                    }
-                    try {
-                        writer.close();
-                    } catch (IOException e) {
-                        log.error("关闭writer失败", e);
-                    }
-                }
-            }).sheet().headRowNumber(0).doRead();
-
-            // 上传到MinIO
-            String csvContent = readFileContent(tempFile);
-            minioUtil.uploadCsvFile(csvContent, csvFileName);
-
-            // 清理临时文件
-            tempFile.delete();
-
-            return csvFileName;
-
-        } catch (Exception e) {
-            log.error("流式Excel转CSV失败", e);
-            return null;
-        }
     }
 
     public static String smartSampling(MultipartFile multipartFile, MinioUtil minioUtil, int maxRows) {
@@ -449,90 +368,6 @@ public class FileUtils {
             sb.append(StringUtils.join(dataList, ",")).append("\n");
         }
         return sb.toString();
-    }
-
-    /**
-     * 采样excel数据
-     *
-     * @param in
-     * @param fileName
-     * @param maxRows
-     * @return
-     */
-    private static List<Map<Integer, String>> sampleExcelData(InputStream in, String fileName, int maxRows) {
-        List<Map<Integer, String>> csvList = null;
-        AtomicInteger rowNum = new AtomicInteger(0);
-        try {
-            if (rowNum.get() < maxRows) {
-                csvList = EasyExcel.read(in)
-                        .excelType(ExcelTypeEnum.XLSX)
-                        .sheet()
-                        .headRowNumber(0)
-                        .doReadSync();
-                rowNum.incrementAndGet();
-            }
-            return csvList;
-        } catch (Exception e) {
-            log.error("数据采样失败");
-            return null;
-        }
-    }
-
-    /**
-     * 读取文件内容
-     */
-    private static String readFileContent(File file) {
-        try {
-            BufferedReader reader = new BufferedReader(new FileReader(file));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line).append("\n");
-            }
-            reader.close();
-            return sb.toString();
-        } catch (IOException e) {
-            throw new RuntimeException("文件读取失败");
-        }
-    }
-
-
-    /**
-     * 分批写入CSV
-     */
-    private static void writeBatchToCsv(List<Map<Integer, String>> batch, BufferedWriter writer) {
-        try {
-            for (Map<Integer, String> row : batch) {
-                writer.write(convertRowToCsvLine(row));
-                writer.newLine();
-            }
-            writer.flush();
-        } catch (IOException e) {
-            throw new RuntimeException("CSV写入失败");
-        }
-    }
-
-
-    /**
-     * 将单行数据转换为CSV行
-     */
-    private static String convertRowToCsvLine(Map<Integer, String> row) {
-        List<String> values = new ArrayList<>();
-        for (int i = 0; i < row.size(); i++) {
-            values.add(escapeCsvField(row.get(i)));
-        }
-        return StringUtils.join(values, ",");
-    }
-
-    /**
-     * CSV字段转义
-     */
-    private static String escapeCsvField(String field) {
-        if (field == null) return "";
-        if (field.contains(",") || field.contains("\"") || field.contains("\n")) {
-            return "\"" + field.replace("\"", "\"\"") + "\"";
-        }
-        return field;
     }
 
     /**

@@ -185,13 +185,6 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
 
                     log.info("大文件智能处理完成，总行数: {}, 采样行数: {}",
                             result.getTotalRows(), FileUtils.countLines(csv));
-//                    //先上传至minio再进行处理
-//                    String originFileName = "original/" + userId + "/" + System.currentTimeMillis() + "_" + multipartFile.getOriginalFilename();
-//                    minioPath = minioUtil.uploadFile(multipartFile, originFileName);
-//                    //流式处理转为csv并且存到minio
-//                    String csvFileName =FileUtils.excelToCsvWithStream(multipartFile, minioUtil, 1000);
-//                    csv = FileUtils.smartSampling(multipartFile, minioUtil, 1000);
-//                    minioPath = csvFileName;
                 }
             }catch (Exception e){
                 log.error("文件处理失败");

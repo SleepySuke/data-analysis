@@ -46,10 +46,10 @@ class ThreePathsE2ETest {
     // ========== 场景1：文件格式校验管道 ==========
 
     @Test
-    @DisplayName("E2E-文件格式校验：xlsx通过，xls通过，非Excel拒绝，空文件名拒绝")
+    @DisplayName("E2E-文件格式校验：xlsx通过，xls拒绝，非Excel拒绝，空文件名拒绝")
     void e2e_validSuffix_allExtensions() {
         boolean expectedXlsxPass = true;
-        boolean expectedXlsPass = true;
+        boolean expectedXlsPass = false;
         boolean expectedCsvFail = false;
         boolean expectedNullNameFail = false;
 
@@ -66,7 +66,7 @@ class ThreePathsE2ETest {
                 "file", (String) null, "application/octet-stream", "x".getBytes());
 
         assertEquals(expectedXlsxPass, FileUtils.validSuffix(xlsxFile), "xlsx应通过");
-        assertEquals(expectedXlsPass, FileUtils.validSuffix(xlsFile), "xls应通过");
+        assertEquals(expectedXlsPass, FileUtils.validSuffix(xlsFile), "xls应拒绝");
         assertEquals(expectedCsvFail, FileUtils.validSuffix(csvFile), "csv应拒绝");
         assertEquals(expectedNullNameFail, FileUtils.validSuffix(nullNameFile), "空文件名应拒绝");
     }
