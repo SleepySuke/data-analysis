@@ -122,41 +122,21 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
     public GenChartVO analysisFile(MultipartFile multipartFile, UploadFileDTO fileDTO) {
         log.info("文件描述：{}", fileDTO);
         log.info("文件：{}", multipartFile);
-        if (multipartFile == null) {
-            log.error("文件为空");
-            return null;
-        }
-        if (!FileUtils.validSuffix(multipartFile)) {
-            log.error("文件格式错误");
+
+        if (!validateFile(multipartFile)) {
             return null;
         }
 
-        //限制文件大小为100mb
-        long maxSizeMB = 100;
-        if (!FileUtils.validFileSize(multipartFile, maxSizeMB)) {
-            log.error("文件过大，最大支持{}MB", maxSizeMB);
-            return null;
-        }
         Long userId = UserContext.getCurrentId();
         if (userId == null) {
             log.error("用户未登录");
             return null;
         }
+
+        validateParams(fileDTO);
         String fileName = fileDTO.getFileName();
         String goal = fileDTO.getGoal();
         String chartType = fileDTO.getChartType();
-        if (StringUtils.isAnyBlank(fileName)) {
-            log.error("文件名称过长:{}", fileName);
-            throw new BaseException("文件名称过长");
-        }
-        if (StringUtils.isAnyBlank(goal)) {
-            log.error("分析目标为空:{}", goal);
-            throw new BaseException("分析目标为空");
-        }
-        if (StringUtils.isAnyBlank(chartType)) {
-            log.error("图表类型为空:{}", chartType);
-            throw new BaseException("图表类型为空");
-        }
 
         String csv = null;
         String minioPath = null;
@@ -313,38 +293,28 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
     public GenChartVO asyncAnalyzeFile(MultipartFile multipartFile, UploadFileDTO fileDTO) {
         log.info("文件描述：{}", fileDTO);
         log.info("文件：{}", multipartFile);
-        if (multipartFile == null) {
-            log.error("文件为空");
+
+        if (!validateFile(multipartFile)) {
             return null;
         }
-        if (!FileUtils.validSuffix(multipartFile)) {
-            log.error("文件格式错误");
-            return null;
-        }
+
         Long userId = UserContext.getCurrentId();
         if (userId == null) {
             log.error("用户未登录");
             return null;
         }
+
+        validateParams(fileDTO);
         String fileName = fileDTO.getFileName();
         String goal = fileDTO.getGoal();
         String chartType = fileDTO.getChartType();
-        if (StringUtils.isAnyBlank(fileName)) {
-            log.error("文件名称过长:{}", fileName);
-            throw new BaseException("文件名称过长");
-        }
-        if (StringUtils.isAnyBlank(goal)) {
-            log.error("分析目标为空:{}", goal);
-            throw new BaseException("分析目标为空");
-        }
-        if (StringUtils.isAnyBlank(chartType)) {
-            log.error("图表类型为空:{}", chartType);
-            throw new BaseException("图表类型为空");
-        }
-        String csvData = FileUtils.excelToCsv(multipartFile);
-        if (StringUtils.isAnyBlank(csvData)) {
-            log.error("数据为空");
-            throw new BaseException("数据为空");
+
+        String csvData = processFileToCsv(multipartFile, userId, fileDTO);
+
+        int estimatedTokens = estimateTokens(csvData, goal, chartType);
+        log.info("估计token数量: {}", estimatedTokens);
+        if (estimatedTokens > 5000) {
+            log.warn("使用token数量过大 -> {}", estimatedTokens);
         }
         //先保存数据，再去调用AI分析，此时AI调用变为异步调用，保存数据改为同步调用，AI调用为提交任务
         Chart chart = new Chart();
@@ -449,38 +419,28 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
     public GenChartVO asyncAnalyze(MultipartFile multipartFile, UploadFileDTO fileDTO) {
         log.info("文件描述：{}", fileDTO);
         log.info("文件：{}", multipartFile);
-        if (multipartFile == null) {
-            log.error("文件为空");
+
+        if (!validateFile(multipartFile)) {
             return null;
         }
-        if (!FileUtils.validSuffix(multipartFile)) {
-            log.error("文件格式错误");
-            return null;
-        }
+
         Long userId = UserContext.getCurrentId();
         if (userId == null) {
             log.error("用户未登录");
             return null;
         }
+
+        validateParams(fileDTO);
         String fileName = fileDTO.getFileName();
         String goal = fileDTO.getGoal();
         String chartType = fileDTO.getChartType();
-        if (StringUtils.isAnyBlank(fileName)) {
-            log.error("文件名称过长:{}", fileName);
-            throw new BaseException("文件名称过长");
-        }
-        if (StringUtils.isAnyBlank(goal)) {
-            log.error("分析目标为空:{}", goal);
-            throw new BaseException("分析目标为空");
-        }
-        if (StringUtils.isAnyBlank(chartType)) {
-            log.error("图表类型为空:{}", chartType);
-            throw new BaseException("图表类型为空");
-        }
-        String csvData = FileUtils.excelToCsv(multipartFile);
-        if (StringUtils.isAnyBlank(csvData)) {
-            log.error("数据为空");
-            throw new BaseException("数据为空");
+
+        String csvData = processFileToCsv(multipartFile, userId, fileDTO);
+
+        int estimatedTokens = estimateTokens(csvData, goal, chartType);
+        log.info("估计token数量: {}", estimatedTokens);
+        if (estimatedTokens > 5000) {
+            log.warn("使用token数量过大 -> {}", estimatedTokens);
         }
         //先保存数据，再去调用AI分析，此时AI调用变为异步调用，保存数据改为同步调用，AI调用为提交任务
         Chart chart = new Chart();
@@ -559,13 +519,93 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
      * 估计token数量
      */
     private int estimateTokens(String csv, String goal, String chartType) {
-        // 简单估算：中文大约1个字符1-2个token
         int csvTokens = csv.length() * 2;
         int goalTokens = goal.length() * 2;
         int chartTypeTokens = chartType.length() * 2;
-
-        // 加上提示词模板的大概token数（约500）
         return csvTokens + goalTokens + chartTypeTokens + 500;
+    }
+
+    /**
+     * 统一的文件校验：格式 + 大小 + 用户登录
+     * @return true if valid, false otherwise
+     */
+    private boolean validateFile(MultipartFile multipartFile) {
+        if (multipartFile == null) {
+            log.error("文件为空");
+            return false;
+        }
+        if (!FileUtils.validSuffix(multipartFile)) {
+            log.error("文件格式错误");
+            return false;
+        }
+        if (!FileUtils.validFileSize(multipartFile, 100)) {
+            log.error("文件过大，最大支持100MB");
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 统一的参数校验：fileName + goal + chartType
+     */
+    private void validateParams(UploadFileDTO fileDTO) {
+        if (fileDTO == null) {
+            throw new BaseException("参数不能为空");
+        }
+        String fileName = fileDTO.getFileName();
+        String goal = fileDTO.getGoal();
+        String chartType = fileDTO.getChartType();
+        if (StringUtils.isAnyBlank(fileName)) {
+            throw new BaseException("文件名称过长");
+        }
+        if (StringUtils.isAnyBlank(goal)) {
+            throw new BaseException("分析目标为空");
+        }
+        if (StringUtils.isAnyBlank(chartType)) {
+            throw new BaseException("图表类型为空");
+        }
+    }
+
+    /**
+     * 统一的文件处理：小文件直接转CSV，大文件采样+MinIO
+     * @return CSV string, or null on failure
+     */
+    private String processFileToCsv(MultipartFile multipartFile, Long userId, UploadFileDTO fileDTO) {
+        String csv;
+        long fileSizeMB = multipartFile.getSize() / (1024 * 1024);
+        log.info("文件大小:{}MB", fileSizeMB);
+
+        if (multipartFile.getSize() < 1024 * 1024 * 10) {
+            csv = FileUtils.excelToCsv(multipartFile);
+        } else {
+            log.info("文件过大，开始进行采样处理->{}MB", fileSizeMB);
+            try {
+                int sampleRows;
+                if (fileDTO.getEnableSampling() != null && fileDTO.getEnableSampling() && fileDTO.getSampleRows() > 0) {
+                    sampleRows = fileDTO.getSampleRows();
+                    csv = FileUtils.smartSampling(multipartFile, minioUtil, sampleRows);
+                } else {
+                    if (fileSizeMB > 50) {
+                        sampleRows = 1000;
+                    } else if (fileSizeMB > 20) {
+                        sampleRows = 2000;
+                    } else {
+                        sampleRows = 3000;
+                    }
+                    SmartFileResult result = FileUtils.smartProcessLargeFile(
+                            multipartFile, minioUtil, sampleRows, true);
+                    csv = result.getSampledData();
+                }
+            } catch (Exception e) {
+                log.error("文件处理失败");
+                throw new BaseException("文件处理失败");
+            }
+        }
+
+        if (StringUtils.isAnyBlank(csv)) {
+            throw new BaseException("数据为空");
+        }
+        return csv;
     }
 
     private WebSocketMessage buildWsMsg(String type, String message, String status, Long chartId) {
