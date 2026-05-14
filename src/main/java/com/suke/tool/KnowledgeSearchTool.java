@@ -6,12 +6,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -32,8 +35,8 @@ public class KnowledgeSearchTool {
     // 默认返回的文档数量
     private static final int DEFAULT_TOP_K = 5;
 
-    // 查询改写的关键词提取数量
-    private static final int KEYWORD_COUNT = 3;
+    @Value("${rag.search.keywords:趋势,增长,下降,对比,占比,分布,金融,医疗,股票,基金,投资,用户,销售,收入,利润,成本,数据,分析,统计,指标,比率}")
+    private String keywordsConfig;
 
     /**
      * 知识库搜索工具 - Agent可调用的主要方法
@@ -112,21 +115,12 @@ public class KnowledgeSearchTool {
      */
     private List<String> extractKeywords(String query) {
         List<String> keywords = new ArrayList<>();
-
-        // 常见的分析相关关键词
-        String[] analysisKeywords = {
-                "趋势", "增长", "下降", "对比", "占比", "分布",
-                "金融", "医疗", "股票", "基金", "投资",
-                "用户", "销售", "收入", "利润", "成本",
-                "数据", "分析", "统计", "指标", "比率"
-        };
-
-        for (String keyword : analysisKeywords) {
-            if (query.contains(keyword)) {
-                keywords.add(keyword);
+        for (String keyword : keywordsConfig.split(",")) {
+            String trimmed = keyword.trim();
+            if (!trimmed.isEmpty() && query.contains(trimmed)) {
+                keywords.add(trimmed);
             }
         }
-
         return keywords;
     }
 
@@ -201,15 +195,10 @@ public class KnowledgeSearchTool {
      * 去重结果
      */
     private List<Document> deduplicateResults(List<Document> results) {
-        Map<String, Document> uniqueDocs = new HashMap<>();
-
+        Map<String, Document> uniqueDocs = new LinkedHashMap<>();
         for (Document doc : results) {
-            String id = doc.getId();
-            if (!uniqueDocs.containsKey(id)) {
-                uniqueDocs.put(id, doc);
-            }
+            uniqueDocs.putIfAbsent(doc.getId(), doc);
         }
-
         return new ArrayList<>(uniqueDocs.values());
     }
 
@@ -274,24 +263,17 @@ public class KnowledgeSearchTool {
         log.info("按行业搜索知识库，查询: {}, 行业: {}", query, industry);
 
         try {
-            // 使用元数据过滤进行搜索
+            // 使用服务端 metadata 过滤
+            FilterExpressionBuilder filterBuilder = new FilterExpressionBuilder();
             List<Document> results = vectorStore.similaritySearch(
                     SearchRequest.builder()
                             .query(query)
                             .topK(DEFAULT_TOP_K)
-                            // 注意：元数据过滤需要根据 Spring AI 版本调整
+                            .filterExpression(filterBuilder.eq("industry", industry).build())
                             .build()
             );
 
-            // 手动过滤行业
-            List<Document> filteredResults = results.stream()
-                    .filter(doc -> {
-                        Object docIndustry = doc.getMetadata().get("industry");
-                        return docIndustry != null && docIndustry.toString().contains(industry);
-                    })
-                    .collect(Collectors.toList());
-
-            return formatSearchResults(query + " (行业: " + industry + ")", filteredResults);
+            return formatSearchResults(query + " (行业: " + industry + ")", results);
 
         } catch (Exception e) {
             log.error("按行业搜索失败", e);

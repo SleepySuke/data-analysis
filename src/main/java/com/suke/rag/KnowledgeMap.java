@@ -2,8 +2,9 @@ package com.suke.rag;
 
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RMap;
+import org.redisson.api.RedissonClient;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +36,9 @@ public class KnowledgeMap {
     @Autowired
     private VectorStore vectorStore;
 
+    @Autowired
+    private RedissonClient redissonClient;
+
     @Value("${rag.knowledge.path}")
     private String knowledgePath;
     @Value("${rag.knowledge.strategy}")
@@ -44,12 +48,33 @@ public class KnowledgeMap {
     private static final int BATCH_SIZE = 100;
     // 分批存储时的批次间延迟（毫秒）
     private static final long BATCH_DELAY_MS = 100;
+    // 批次写入最大重试次数
+    private static final int MAX_RETRY_ATTEMPTS = 3;
+    // 重试间隔（毫秒）
+    private static final long RETRY_DELAY_MS = 100;
 
     // 缓存已加载的知识 用于判断是否需要重新更新加载
-    private final Map<String, String> loadedKnowledgeCache = new ConcurrentHashMap<>();
+    private Map<String, String> loadedKnowledgeCache;
     private static final String CACHE_KEY_PREFIX = "knowledge:hash:";
 
     @PostConstruct
+    public void init() {
+        initCache();
+        KnowledgeInit();
+    }
+
+    void initCache() {
+        try {
+            RMap<String, String> redisCache = redissonClient.getMap(CACHE_KEY_PREFIX + "cache");
+            redisCache.size(); // 验证连接
+            this.loadedKnowledgeCache = redisCache;
+            log.info("知识库缓存使用Redis持久化");
+        } catch (Exception e) {
+            log.warn("Redis缓存初始化失败，回退到内存缓存", e);
+            this.loadedKnowledgeCache = new ConcurrentHashMap<>();
+        }
+    }
+
     public boolean KnowledgeInit() {
         log.info("知识库初始化开始，初始化策略 -> {}", strategy);
         try {
@@ -70,10 +95,6 @@ public class KnowledgeMap {
             long endTime = System.currentTimeMillis();
             log.info("知识库初始化完成，共处理 {} 个文档，耗时 {} ms",
                     knowledgeDocs.size(), (endTime - startTime));
-            for (Document knowledgeDoc : knowledgeDocs) {
-               // log.info("已加载知识 -> {}", knowledgeDoc.getMetadata());
-                System.out.println(knowledgeDoc.getMetadata());
-            }
             return true;
         } catch (Exception e) {
             log.error("知识库初始化失败", e);
@@ -182,17 +203,30 @@ public class KnowledgeMap {
             List<Document> batch = documents.subList(i, end);
             int batchNum = (i / BATCH_SIZE) + 1;
 
-            try {
-                vectorStore.add(batch);
-                log.info("批次 {}/{} 成功添加 {} 个文档", batchNum, totalBatches, batch.size());
-
-                // 添加批次间延迟，避免给 Redis 带来过大压力
-                if (end < totalDocs) {
-                    Thread.sleep(BATCH_DELAY_MS);
+            boolean batchSuccess = false;
+            for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+                try {
+                    vectorStore.add(batch);
+                    batchSuccess = true;
+                    log.info("批次 {}/{} 成功添加 {} 个文档", batchNum, totalBatches, batch.size());
+                    if (end < totalDocs) {
+                        Thread.sleep(BATCH_DELAY_MS);
+                    }
+                    break;
+                } catch (Exception e) {
+                    log.warn("批次 {}/{} 添加失败 (尝试 {}/{})", batchNum, totalBatches, attempt, MAX_RETRY_ATTEMPTS);
+                    if (attempt < MAX_RETRY_ATTEMPTS) {
+                        try {
+                            Thread.sleep(RETRY_DELAY_MS);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
                 }
-            } catch (Exception e) {
-                log.error("批次 {}/{} 添加文档失败", batchNum, totalBatches, e);
-                // 可以在这里添加重试逻辑
+            }
+            if (!batchSuccess) {
+                log.error("批次 {}/{} 最终失败，已重试 {} 次", batchNum, totalBatches, MAX_RETRY_ATTEMPTS);
             }
         }
 
@@ -253,50 +287,39 @@ public class KnowledgeMap {
         return documents;
     }
 
-    private List<Document> loadCsvDocuments(Resource resource) {
+    List<Document> loadCsvDocuments(Resource resource) {
         List<Document> documents = new ArrayList<>();
-        BufferedReader br = null;
-        int lineNumber = 0;
         Map<Integer, String> header = new HashMap<>();
-        try {
-            br = new BufferedReader(new InputStreamReader(resource.getInputStream()));
-            br.readLine();
+        boolean headerProcessed = false;
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(resource.getInputStream()))) {
             String line;
             while ((line = br.readLine()) != null) {
-                lineNumber++;
                 line = line.trim();
                 if (line.isEmpty() || line.startsWith("#")) {
                     continue;
                 }
                 List<String> csvList = loadCsvLine(line);
-                if(lineNumber == 2){
-                    for(int i = 0; i < csvList.size(); i++){
+                if (!headerProcessed) {
+                    for (int i = 0; i < csvList.size(); i++) {
                         header.put(i, csvList.get(i));
                     }
                     log.info("csv表头->{}", header);
-                }else{
-                    try{
+                    headerProcessed = true;
+                } else {
+                    try {
                         Document doc = createDoc(csvList, header, resource.getFilename());
-                        if(doc != null){
+                        if (doc != null) {
                             documents.add(doc);
                         }
-                    }catch (Exception e){
-                        log.error("加载csv文档失败"+e.getCause());
+                    } catch (Exception e) {
+                        log.error("加载csv文档失败", e);
                     }
                 }
-
             }
-        }catch (Exception e){
+        } catch (Exception e) {
             log.error("加载csv文档失败", e);
             return null;
-        }finally {
-            try {
-                if (br != null) {
-                    br.close();
-                }
-            } catch (Exception e) {
-                log.error("关闭文件失败", e);
-            }
         }
         return documents;
     }
