@@ -36,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -147,7 +148,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         if(multipartFile.getSize() < 1024 * 1024 * 10){
             csv = FileUtils.excelToCsv(multipartFile);
             //检测转换为csv文件后的大小，如果大于1mb则上传至minio中
-            if(csv.getBytes().length > 1024 * 1024){
+            if(csv.getBytes(StandardCharsets.UTF_8).length > 1024 * 1024){
                 //上传至minio中，通过时间戳进行识别
                 String csvFileName = "csv/" + userId + "/" + System.currentTimeMillis() + ".csv";
                 minioPath = minioUtil.uploadCsvFile(csv, csvFileName);
@@ -191,7 +192,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
                 throw new BaseException("文件处理失败");
             }
         }
-        int length = csv.getBytes().length;
+        int length = csv.getBytes(StandardCharsets.UTF_8).length;
         log.info("文件大小->{}", length);
         if (StringUtils.isAnyBlank(csv)) {
             log.error("数据为空");
@@ -202,8 +203,8 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         int estimatedTokens = estimateTokens(csv, goal, chartType);
         log.info("估计token数量: {}", estimatedTokens);
 
-        if(estimatedTokens > 5000){
-            log.warn("使用token数量过大 -> {}", estimatedTokens);
+        if(estimatedTokens > MAX_TOKEN_LIMIT){
+            throw new BaseException("数据量过大，预计消耗 " + estimatedTokens + " tokens，超过上限 " + MAX_TOKEN_LIMIT + "。请减少数据量后重试。");
         }
 
 
@@ -306,8 +307,8 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
 
         int estimatedTokens = estimateTokens(csvData, goal, chartType);
         log.info("估计token数量: {}", estimatedTokens);
-        if (estimatedTokens > 5000) {
-            log.warn("使用token数量过大 -> {}", estimatedTokens);
+        if (estimatedTokens > MAX_TOKEN_LIMIT) {
+            throw new BaseException("数据量过大，预计消耗 " + estimatedTokens + " tokens，超过上限 " + MAX_TOKEN_LIMIT + "。请减少数据量后重试。");
         }
         //先保存数据，再去调用AI分析，此时AI调用变为异步调用，保存数据改为同步调用，AI调用为提交任务
         Chart chart = new Chart();
@@ -432,8 +433,8 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
 
         int estimatedTokens = estimateTokens(csvData, goal, chartType);
         log.info("估计token数量: {}", estimatedTokens);
-        if (estimatedTokens > 5000) {
-            log.warn("使用token数量过大 -> {}", estimatedTokens);
+        if (estimatedTokens > MAX_TOKEN_LIMIT) {
+            throw new BaseException("数据量过大，预计消耗 " + estimatedTokens + " tokens，超过上限 " + MAX_TOKEN_LIMIT + "。请减少数据量后重试。");
         }
         //先保存数据，再去调用AI分析，此时AI调用变为异步调用，保存数据改为同步调用，AI调用为提交任务
         Chart chart = new Chart();
@@ -508,14 +509,29 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         return this.updateById(chart);
     }
 
+    private static final int MAX_TOKEN_LIMIT = 5000;
+
     /**
-     * 估计token数量
+     * 估算token数量：CJK字符约2token，ASCII约1token
      */
     private int estimateTokens(String csv, String goal, String chartType) {
-        int csvTokens = csv.length() * 2;
-        int goalTokens = goal.length() * 2;
-        int chartTypeTokens = chartType.length() * 2;
+        int csvTokens = countTokens(csv);
+        int goalTokens = countTokens(goal);
+        int chartTypeTokens = countTokens(chartType);
         return csvTokens + goalTokens + chartTypeTokens + 500;
+    }
+
+    private int countTokens(String text) {
+        int tokens = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c >= 0x4E00 && c <= 0x9FFF) {
+                tokens += 2;
+            } else {
+                tokens += 1;
+            }
+        }
+        return tokens;
     }
 
     /**

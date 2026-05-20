@@ -10,6 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -27,6 +28,7 @@ public class MinioUtil {
     private String bucketName;
 
 
+    @PostConstruct
     private void init(){
         try {
             boolean found = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
@@ -47,7 +49,6 @@ public class MinioUtil {
      */
     public String uploadFile(MultipartFile file,String objectName) {
         try{
-            init();
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(bucketName)
@@ -72,8 +73,7 @@ public class MinioUtil {
      */
     public String uploadCsvFile(String csvData,String objectName){
         try {
-            init();
-            byte[] bytes = csvData.getBytes("UTF-8");
+            byte[] bytes = csvData.getBytes(StandardCharsets.UTF_8);
             ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes);
             minioClient.putObject(
                     PutObjectArgs.builder()

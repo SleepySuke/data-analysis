@@ -34,5 +34,19 @@ public class Result<T> implements Serializable {
         return result;
     }
 
+    public static <T> Result<T> error(ErrorCode errorCode) {
+        Result result = new Result();
+        result.code = errorCode.getCode();
+        result.message = errorCode.getMessage();
+        return result;
+    }
+
+    public static <T> Result<T> error(ErrorCode errorCode, String message) {
+        Result result = new Result();
+        result.code = errorCode.getCode();
+        result.message = message;
+        return result;
+    }
+
 
 }

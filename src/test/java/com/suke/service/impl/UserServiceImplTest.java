@@ -23,6 +23,8 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.util.DigestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,6 +44,12 @@ class UserServiceImplTest {
     @Mock
     private JWTProperties jwtProperties;
 
+    @Mock
+    private RedissonClient redissonClient;
+
+    @Mock
+    private RLock rLock;
+
     private static final String SALT = "suke";
 
     private String encryptPassword(String raw) {
@@ -60,6 +68,7 @@ class UserServiceImplTest {
     @BeforeEach
     void setUp() {
         UserContext.setCurrentId(1L);
+        when(redissonClient.getLock(anyString())).thenReturn(rLock);
     }
 
     @AfterEach

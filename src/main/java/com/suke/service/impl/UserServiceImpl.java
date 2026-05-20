@@ -20,6 +20,8 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +50,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     private UserMapper userMapper;
     @Resource
     private JWTProperties jwtProperties;
+    @Autowired
+    private RedissonClient redissonClient;
 
     @Transactional(rollbackFor = Exception.class)
     @Override
@@ -117,8 +121,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             log.error("两次输入的密码不一致");
             throw new FailRegisterException(ErrorCode.PARAMS_ERROR.getMessage());
         }
-        //查询账户是否存在，使用synchronized进行同步搜索，防止重复注册账号
-        synchronized (userAccount.intern()) {
+        //查询账户是否存在，使用Redisson分布式锁防止重复注册账号
+        String lockKey = "register:lock:" + userAccount;
+        RLock lock = redissonClient.getLock(lockKey);
+        try {
+            lock.lock();
             QueryWrapper<User> queryWrapper = new QueryWrapper<>();
             queryWrapper.eq("user_account", userAccount);
             long count = userMapper.selectCount(queryWrapper);
@@ -126,7 +133,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                 log.error("用户已存在");
                 throw new FailRegisterException(ErrorCode.PARAMS_ERROR.getMessage());
             }
-            //使用md5加密密码
             String encryptPasswd = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
             User user = new User();
             user.setUserAccount(userAccount);
@@ -137,6 +143,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             }
             log.info("用户注册成功：{}", user);
             return user.getId();
+        } finally {
+            lock.unlock();
         }
     }
 
