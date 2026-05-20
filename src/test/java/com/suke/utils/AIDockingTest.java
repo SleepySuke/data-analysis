@@ -2,6 +2,7 @@ package com.suke.utils;
 
 import com.suke.config.ChartTypeTemplateConfig;
 import com.suke.exception.AIDockingException;
+import com.suke.tool.KnowledgeSearchTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ class AIDockingTest {
     @Mock private ChatClient deepseekClient;
     @Mock private ChartTypeTemplateConfig chartTypeTemplateConfig;
     @Mock private PromptBuilder promptBuilder;
+    @Mock private KnowledgeSearchTool knowledgeSearchTool;
 
     @Mock private ChatClient.ChatClientRequestSpec requestSpec;
     @Mock private ChatClient.CallResponseSpec callResponseSpec;
@@ -42,6 +44,8 @@ class AIDockingTest {
         setField("deepseekClient", deepseekClient);
         setField("chartTypeTemplateConfig", chartTypeTemplateConfig);
         setField("promptBuilder", promptBuilder);
+        setField("knowledgeSearchTool", knowledgeSearchTool);
+        setField("ragEnabled", false);
     }
 
     private void setField(String name, Object value) throws Exception {
@@ -141,5 +145,147 @@ class AIDockingTest {
         assertFalse(systemArg.contains("date,sales"), "system prompt should not contain CSV data");
         assertFalse(systemArg.contains("1,100"), "system prompt should not contain CSV data");
         assertFalse(systemArg.contains("分析目标"), "system prompt should not contain user goal");
+    }
+
+    // ========== RAG 集成测试 ==========
+
+    @Test
+    @DisplayName("RAG-关闭时应使用标准prompt，不调用知识检索")
+    void doDataAnalysis_ragDisabled_shouldUseStandardPrompt() throws Exception {
+        setField("ragEnabled", false);
+        when(chartTypeTemplateConfig.supportsChartType("line")).thenReturn(true);
+        when(promptBuilder.buildPrompt("line")).thenReturn("标准系统提示词");
+        setupMockChain();
+        when(callResponseSpec.content()).thenReturn("分析结果");
+
+        aiDocking.doDataAnalysis("分析趋势", "line", "csv数据");
+
+        verify(promptBuilder).buildPrompt("line");
+        verify(promptBuilder, never()).buildEnhancedPrompt(anyString(), anyString(), anyString(), anyString());
+        verify(knowledgeSearchTool, never()).searchKnowledge(anyString());
+    }
+
+    @Test
+    @DisplayName("RAG-开启且检索成功时应使用增强prompt")
+    void doDataAnalysis_ragEnabled_withKnowledge_shouldUseEnhancedPrompt() throws Exception {
+        setField("ragEnabled", true);
+        when(chartTypeTemplateConfig.supportsChartType("line")).thenReturn(true);
+        when(knowledgeSearchTool.searchKnowledge("分析趋势")).thenReturn("相关知识内容：金融趋势分析...");
+        when(promptBuilder.buildEnhancedPrompt("分析趋势", "相关知识内容：金融趋势分析...", "csv数据", "line"))
+                .thenReturn("增强系统提示词");
+        setupMockChain();
+        when(callResponseSpec.content()).thenReturn("增强分析结果");
+
+        String result = aiDocking.doDataAnalysis("分析趋势", "line", "csv数据");
+
+        assertEquals("增强分析结果", result);
+        verify(promptBuilder).buildEnhancedPrompt("分析趋势", "相关知识内容：金融趋势分析...", "csv数据", "line");
+        verify(promptBuilder, never()).buildPrompt(anyString());
+    }
+
+    @Test
+    @DisplayName("RAG-检索无结果时应回退到标准prompt")
+    void doDataAnalysis_ragEnabled_emptyKnowledge_shouldFallbackToStandard() throws Exception {
+        setField("ragEnabled", true);
+        when(chartTypeTemplateConfig.supportsChartType("bar")).thenReturn(true);
+        when(knowledgeSearchTool.searchKnowledge("分析目标")).thenReturn("未找到与 '分析目标' 相关的知识内容。");
+        when(promptBuilder.buildPrompt("bar")).thenReturn("标准系统提示词");
+        setupMockChain();
+        when(callResponseSpec.content()).thenReturn("标准分析结果");
+
+        String result = aiDocking.doDataAnalysis("分析目标", "bar", "csv数据");
+
+        assertEquals("标准分析结果", result);
+        verify(promptBuilder).buildPrompt("bar");
+        verify(promptBuilder, never()).buildEnhancedPrompt(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("RAG-检索异常时应回退到标准prompt，不抛异常")
+    void doDataAnalysis_ragEnabled_searchException_shouldFallbackToStandard() throws Exception {
+        setField("ragEnabled", true);
+        when(chartTypeTemplateConfig.supportsChartType("pie")).thenReturn(true);
+        when(knowledgeSearchTool.searchKnowledge("分析")).thenThrow(new RuntimeException("Redis连接失败"));
+        when(promptBuilder.buildPrompt("pie")).thenReturn("标准系统提示词");
+        setupMockChain();
+        when(callResponseSpec.content()).thenReturn("标准分析结果");
+
+        String result = aiDocking.doDataAnalysis("分析", "pie", "csv数据");
+
+        assertEquals("标准分析结果", result);
+        verify(promptBuilder).buildPrompt("pie");
+        verify(promptBuilder, never()).buildEnhancedPrompt(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("RAG-增强模式下userMessage不应包含CSV数据")
+    void doDataAnalysis_ragEnabled_withKnowledge_userMessageShouldBeSimple() throws Exception {
+        setField("ragEnabled", true);
+        when(chartTypeTemplateConfig.supportsChartType("line")).thenReturn(true);
+        when(knowledgeSearchTool.searchKnowledge("分析趋势")).thenReturn("知识内容");
+        when(promptBuilder.buildEnhancedPrompt("分析趋势", "知识内容", "date,sales\n1,100", "line"))
+                .thenReturn("增强系统提示词");
+        setupMockChain();
+        when(callResponseSpec.content()).thenReturn("结果");
+
+        aiDocking.doDataAnalysis("分析趋势", "line", "date,sales\n1,100");
+
+        ArgumentCaptor<String> userCaptor = ArgumentCaptor.forClass(String.class);
+        verify(requestSpec).user(userCaptor.capture());
+
+        String userArg = userCaptor.getValue();
+        assertFalse(userArg.contains("date,sales"), "增强模式下 userMessage 不应包含 CSV 数据");
+        assertFalse(userArg.contains("1,100"), "增强模式下 userMessage 不应包含 CSV 数据");
+    }
+
+    @Test
+    @DisplayName("RAG-检索返回搜索失败前缀时应回退到标准prompt")
+    void doDataAnalysis_ragEnabled_searchFailedPrefix_shouldFallbackToStandard() throws Exception {
+        setField("ragEnabled", true);
+        when(chartTypeTemplateConfig.supportsChartType("bar")).thenReturn(true);
+        when(knowledgeSearchTool.searchKnowledge("分析")).thenReturn("知识库搜索失败: Redis连接超时");
+        when(promptBuilder.buildPrompt("bar")).thenReturn("标准系统提示词");
+        setupMockChain();
+        when(callResponseSpec.content()).thenReturn("标准分析结果");
+
+        String result = aiDocking.doDataAnalysis("分析", "bar", "csv数据");
+
+        assertEquals("标准分析结果", result);
+        verify(promptBuilder).buildPrompt("bar");
+        verify(promptBuilder, never()).buildEnhancedPrompt(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("RAG-检索返回null时应回退到标准prompt")
+    void doDataAnalysis_ragEnabled_nullResult_shouldFallbackToStandard() throws Exception {
+        setField("ragEnabled", true);
+        when(chartTypeTemplateConfig.supportsChartType("pie")).thenReturn(true);
+        when(knowledgeSearchTool.searchKnowledge("分析")).thenReturn(null);
+        when(promptBuilder.buildPrompt("pie")).thenReturn("标准系统提示词");
+        setupMockChain();
+        when(callResponseSpec.content()).thenReturn("标准分析结果");
+
+        String result = aiDocking.doDataAnalysis("分析", "pie", "csv数据");
+
+        assertEquals("标准分析结果", result);
+        verify(promptBuilder).buildPrompt("pie");
+        verify(promptBuilder, never()).buildEnhancedPrompt(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("buildUserMessage-chartType为null时不应包含图表类型行")
+    void buildUserMessage_nullChartType_shouldOmitChartTypeLine() throws Exception {
+        setField("ragEnabled", false);
+        when(chartTypeTemplateConfig.supportsChartType("line")).thenReturn(true);
+        when(promptBuilder.buildPrompt("line")).thenReturn("系统提示词");
+        setupMockChain();
+        when(callResponseSpec.content()).thenReturn("结果");
+
+        aiDocking.doDataAnalysis("分析目标", "line", "csv数据");
+
+        ArgumentCaptor<String> userCaptor = ArgumentCaptor.forClass(String.class);
+        verify(requestSpec).user(userCaptor.capture());
+        String userArg = userCaptor.getValue();
+        assertTrue(userArg.contains("图表类型：line"), "chartType 非空时应包含图表类型行");
     }
 }

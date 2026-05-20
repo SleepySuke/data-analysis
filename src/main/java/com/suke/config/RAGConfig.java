@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestTemplate;
 import redis.clients.jedis.JedisPoolConfig;
 import redis.clients.jedis.JedisPooled;
 
@@ -32,6 +33,11 @@ public class RAGConfig {
     private String knowledgeContent = "knowledge_content";
     private String metadataPrefix = "meta:knowledge:";
     private int embeddingDimensions = 1536;
+
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
 
     @Bean
     public JedisPooled jedisPooled() {

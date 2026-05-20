@@ -3,7 +3,6 @@ package com.suke;
 import com.suke.common.AnalysisResult;
 import com.suke.constant.BIConstant;
 import com.suke.context.UserContext;
-import com.suke.datamq.Init;
 import com.suke.datamq.MessageProducer;
 import com.suke.domain.dto.file.UploadFileDTO;
 import com.suke.domain.dto.user.UserLoginDTO;

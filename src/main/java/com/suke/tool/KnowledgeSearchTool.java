@@ -2,6 +2,8 @@ package com.suke.tool;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import com.suke.config.RAGSearchProperties;
+import com.suke.rag.DashScopeRerankClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -11,20 +13,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import redis.clients.jedis.JedisPooled;
+import redis.clients.jedis.search.FTSearchParams;
+import redis.clients.jedis.search.SearchResult;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * @author 自然醒
- * @version 1.0
- * @date 2026-02-18 21:54
- * @description 增强检索工具 - 用于Agent调用知识库进行检索增强
- */
 @Component
 @Slf4j
 public class KnowledgeSearchTool {
@@ -32,18 +31,21 @@ public class KnowledgeSearchTool {
     @Autowired
     private VectorStore vectorStore;
 
-    // 默认返回的文档数量
-    private static final int DEFAULT_TOP_K = 5;
+    @Autowired
+    private RAGSearchProperties searchProperties;
+
+    @Autowired
+    private DashScopeRerankClient rerankClient;
+
+    @Autowired
+    private JedisPooled jedisPooled;
+
+    @Value("${rag.redis.index-name:idx:data_analysis_knowledge_v1}")
+    private String indexName;
 
     @Value("${rag.search.keywords:趋势,增长,下降,对比,占比,分布,金融,医疗,股票,基金,投资,用户,销售,收入,利润,成本,数据,分析,统计,指标,比率}")
     private String keywordsConfig;
 
-    /**
-     * 知识库搜索工具 - Agent可调用的主要方法
-     *
-     * @param goal 用户的分析目标/查询意图
-     * @return 搜索结果，包含相关的知识内容
-     */
     public String searchKnowledge(
             @JsonProperty(value = "goal", required = true)
             @JsonPropertyDescription("用户的分析目标或查询意图，例如：分析销售额趋势、分析用户增长情况")
@@ -60,13 +62,42 @@ public class KnowledgeSearchTool {
             List<String> queries = rewriteQuery(goal);
             log.info("查询改写结果: {}", queries);
 
-            // 2. 执行多查询搜索
-            List<Document> allResults = executeMultiQuerySearch(queries);
+            // 2. 执行检索
+            List<Document> allResults;
+            if (searchProperties.isHybridEnabled()) {
+                // 双路检索：向量 + BM25
+                allResults = executeHybridSearch(queries, goal);
+            } else {
+                // 原始行为：纯向量检索
+                allResults = executeMultiQuerySearch(queries);
+            }
 
-            // 3. 去重并排序
+            // 3. 去重
             List<Document> uniqueResults = deduplicateResults(allResults);
 
-            // 4. 格式化返回结果
+            // 4. 相似度阈值过滤（仅混合检索模式下启用）
+            if (searchProperties.isHybridEnabled()) {
+                uniqueResults = applySimilarityThreshold(
+                        uniqueResults, searchProperties.getSimilarityThreshold());
+            }
+
+            // 5. 重排（可开关）
+            if (searchProperties.isRerankEnabled() && !uniqueResults.isEmpty()) {
+                try {
+                    uniqueResults = rerankClient.rerank(goal, uniqueResults);
+                    log.info("DashScope rerank 完成，结果数: {}", uniqueResults.size());
+                } catch (Exception e) {
+                    log.warn("Rerank 调用失败，使用原始排序: {}", e.getMessage());
+                }
+            }
+
+            // 6. Top-K 截断
+            int topK = searchProperties.getTopK();
+            if (uniqueResults.size() > topK) {
+                uniqueResults = uniqueResults.subList(0, topK);
+            }
+
+            // 7. 格式化返回结果
             String result = formatSearchResults(goal, uniqueResults);
 
             log.info("知识库搜索完成，找到 {} 条相关知识", uniqueResults.size());
@@ -79,40 +110,169 @@ public class KnowledgeSearchTool {
     }
 
     /**
-     * 查询改写 - 生成多个查询变体以提高召回率
-     *
-     * @param originalQuery 原始查询
-     * @return 查询变体列表
+     * 混合检索：对每个查询变体执行向量 + BM25 双路检索，RRF 分数融合
      */
+    private List<Document> executeHybridSearch(List<String> queries, String originalGoal) {
+        List<List<RankedHit>> allRankedLists = new ArrayList<>();
+
+        for (String query : queries) {
+            try {
+                // 向量检索
+                List<Document> vectorResults = vectorStore.similaritySearch(
+                        SearchRequest.builder()
+                                .query(query)
+                                .topK(searchProperties.getVectorTopK())
+                                .build()
+                );
+                if (vectorResults != null && !vectorResults.isEmpty()) {
+                    List<RankedHit> vectorRanked = new ArrayList<>();
+                    for (int i = 0; i < vectorResults.size(); i++) {
+                        Document doc = vectorResults.get(i);
+                        vectorRanked.add(new RankedHit(
+                                doc.getId(), doc.getText(), doc.getMetadata(), doc.getScore()));
+                    }
+                    allRankedLists.add(vectorRanked);
+                }
+
+                // BM25 检索
+                List<RankedHit> bm25Ranked = executeBM25Search(query);
+                if (!bm25Ranked.isEmpty()) {
+                    allRankedLists.add(bm25Ranked);
+                }
+            } catch (Exception e) {
+                log.warn("混合检索查询 '{}' 失败: {}", query, e.getMessage());
+            }
+        }
+
+        // RRF 分数融合
+        List<RankedHit> fused = reciprocalRankFusion(allRankedLists, searchProperties.getRrfK());
+
+        // 转回 Document 列表
+        List<Document> result = new ArrayList<>();
+        for (RankedHit hit : fused) {
+            result.add(Document.builder()
+                    .id(hit.id)
+                    .text(hit.text)
+                    .metadata(hit.metadata)
+                    .score(hit.originalScore)
+                    .build());
+        }
+        return result;
+    }
+
+    /**
+     * BM25 全文检索（通过 Jedis FT.SEARCH）
+     */
+    private List<RankedHit> executeBM25Search(String query) {
+        List<RankedHit> results = new ArrayList<>();
+        try {
+            String searchQuery = "@knowledge_content:" + query;
+            FTSearchParams params = FTSearchParams.searchParams()
+                    .limit(0, searchProperties.getBm25TopK())
+                    .withScores()
+                    .dialect(2);
+
+            SearchResult searchResult = jedisPooled.ftSearch(indexName, searchQuery, params);
+
+            for (redis.clients.jedis.search.Document doc : searchResult.getDocuments()) {
+                String text = doc.getString("knowledge_content");
+                if (text != null && !text.isEmpty()) {
+                    Map<String, Object> metadata = new java.util.HashMap<>();
+                    for (Map.Entry<String, Object> prop : doc.getProperties()) {
+                        String key = prop.getKey();
+                        if (!"knowledge_content".equals(key) && prop.getValue() != null) {
+                            metadata.put(key, prop.getValue());
+                        }
+                    }
+                    results.add(new RankedHit(doc.getId(), text, metadata, null));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("BM25 检索失败，查询 '{}': {}", query, e.getMessage());
+        }
+        return results;
+    }
+
+    /**
+     * Reciprocal Rank Fusion（RRF）分数融合
+     * score(d) = Σ 1/(k + rank(d))
+     */
+    List<RankedHit> reciprocalRankFusion(List<List<RankedHit>> rankedLists, int k) {
+        Map<String, RankedHit> docMap = new LinkedHashMap<>();
+        Map<String, Double> rrfScores = new LinkedHashMap<>();
+
+        for (List<RankedHit> rankedList : rankedLists) {
+            for (int rank = 0; rank < rankedList.size(); rank++) {
+                RankedHit hit = rankedList.get(rank);
+                rrfScores.merge(hit.id, 1.0 / (k + rank + 1), Double::sum);
+                docMap.putIfAbsent(hit.id, hit);
+            }
+        }
+
+        List<RankedHit> fused = new ArrayList<>();
+        for (Map.Entry<String, Double> entry : rrfScores.entrySet()) {
+            RankedHit hit = docMap.get(entry.getKey());
+            fused.add(new RankedHit(hit.id, hit.text, hit.metadata, hit.originalScore, entry.getValue()));
+        }
+
+        fused.sort(Comparator.comparingDouble((RankedHit h) -> h.rrfScore).reversed());
+        return fused;
+    }
+
+    /**
+     * 相似度阈值过滤
+     * score == null（BM25-only）保留，score < threshold 过滤
+     */
+    List<Document> applySimilarityThreshold(List<Document> docs, double threshold) {
+        return docs.stream()
+                .filter(doc -> doc.getScore() == null || doc.getScore() >= threshold)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 内部类：RRF 排名命中
+     */
+    public static class RankedHit {
+        public final String id;
+        public final String text;
+        public final Map<String, Object> metadata;
+        public final Double originalScore;
+        public final double rrfScore;
+
+        public RankedHit(String id, String text, Map<String, Object> metadata, Double originalScore) {
+            this(id, text, metadata, originalScore, 0.0);
+        }
+
+        public RankedHit(String id, String text, Map<String, Object> metadata, Double originalScore, double rrfScore) {
+            this.id = id;
+            this.text = text;
+            this.metadata = metadata;
+            this.originalScore = originalScore;
+            this.rrfScore = rrfScore;
+        }
+    }
+
     private List<String> rewriteQuery(String originalQuery) {
         List<String> queries = new ArrayList<>();
 
-        // 1. 添加原始查询
         queries.add(originalQuery);
 
-        // 2. 提取关键词
         List<String> keywords = extractKeywords(originalQuery);
         if (!keywords.isEmpty()) {
-            // 添加关键词组合查询
             queries.addAll(keywords);
         }
 
-        // 3. 生成简化查询（去掉修饰词）
         String simplifiedQuery = simplifyQuery(originalQuery);
         if (!simplifiedQuery.equals(originalQuery)) {
             queries.add(simplifiedQuery);
         }
 
-        // 4. 行业领域扩展
         List<String> domainQueries = expandDomainQuery(originalQuery);
         queries.addAll(domainQueries);
 
         return queries.stream().distinct().collect(Collectors.toList());
     }
 
-    /**
-     * 从查询中提取关键词
-     */
     private List<String> extractKeywords(String query) {
         List<String> keywords = new ArrayList<>();
         for (String keyword : keywordsConfig.split(",")) {
@@ -124,11 +284,7 @@ public class KnowledgeSearchTool {
         return keywords;
     }
 
-    /**
-     * 简化查询 - 去掉修饰词
-     */
     private String simplifyQuery(String query) {
-        // 去掉常见的修饰词
         return query
                 .replace("请帮我", "")
                 .replace("帮我", "")
@@ -139,14 +295,10 @@ public class KnowledgeSearchTool {
                 .trim();
     }
 
-    /**
-     * 领域扩展查询
-     */
     private List<String> expandDomainQuery(String query) {
         List<String> expandedQueries = new ArrayList<>();
 
-        // 领域映射
-        Map<String, String[]> domainMap = new HashMap<>();
+        Map<String, String[]> domainMap = new java.util.HashMap<>();
         domainMap.put("销售", new String[]{"收入", "营业额", "业绩"});
         domainMap.put("用户", new String[]{"客户", "会员", "活跃用户"});
         domainMap.put("金融", new String[]{"投资", "理财", "资金", "股票"});
@@ -164,18 +316,17 @@ public class KnowledgeSearchTool {
         return expandedQueries;
     }
 
-    /**
-     * 执行多查询搜索
-     */
     private List<Document> executeMultiQuerySearch(List<String> queries) {
         List<Document> allResults = new ArrayList<>();
+
+        int topK = searchProperties.getVectorTopK();
 
         for (String query : queries) {
             try {
                 List<Document> results = vectorStore.similaritySearch(
                         SearchRequest.builder()
                                 .query(query)
-                                .topK(DEFAULT_TOP_K)
+                                .topK(topK)
                                 .build()
                 );
 
@@ -191,9 +342,6 @@ public class KnowledgeSearchTool {
         return allResults;
     }
 
-    /**
-     * 去重结果
-     */
     private List<Document> deduplicateResults(List<Document> results) {
         Map<String, Document> uniqueDocs = new LinkedHashMap<>();
         for (Document doc : results) {
@@ -202,9 +350,6 @@ public class KnowledgeSearchTool {
         return new ArrayList<>(uniqueDocs.values());
     }
 
-    /**
-     * 格式化搜索结果
-     */
     private String formatSearchResults(String goal, List<Document> results) {
         if (results.isEmpty()) {
             return String.format("未找到与 '%s' 相关的知识内容。建议尝试更具体的查询关键词。", goal);
@@ -218,7 +363,6 @@ public class KnowledgeSearchTool {
             sb.append(String.format("【知识 %d】\n", index++));
             sb.append("内容: ").append(doc.getText()).append("\n");
 
-            // 添加元数据信息
             Map<String, Object> metadata = doc.getMetadata();
             if (metadata != null && !metadata.isEmpty()) {
                 if (metadata.containsKey("knowledge_type")) {
@@ -233,25 +377,20 @@ public class KnowledgeSearchTool {
             }
             sb.append("\n");
 
-            // 最多返回5条结果
-            if (index > 5) {
+            int topK = searchProperties.getTopK();
+            if (index > topK) {
                 break;
             }
         }
 
         sb.append("---\n");
-        sb.append(String.format("共找到 %d 条相关知识，以上展示前 %d 条。", results.size(), Math.min(5, results.size())));
+        int topK = searchProperties.getTopK();
+        sb.append(String.format("共找到 %d 条相关知识，以上展示前 %d 条。",
+                results.size(), Math.min(topK, results.size())));
 
         return sb.toString();
     }
 
-    /**
-     * 根据行业类型进行精确搜索
-     *
-     * @param query   查询内容
-     * @param industry 行业类型（如：金融、医疗等）
-     * @return 搜索结果
-     */
     public String searchByIndustry(
             @JsonProperty(value = "query", required = true)
             @JsonPropertyDescription("查询内容")
@@ -263,12 +402,11 @@ public class KnowledgeSearchTool {
         log.info("按行业搜索知识库，查询: {}, 行业: {}", query, industry);
 
         try {
-            // 使用服务端 metadata 过滤
             FilterExpressionBuilder filterBuilder = new FilterExpressionBuilder();
             List<Document> results = vectorStore.similaritySearch(
                     SearchRequest.builder()
                             .query(query)
-                            .topK(DEFAULT_TOP_K)
+                            .topK(searchProperties.getTopK())
                             .filterExpression(filterBuilder.eq("industry", industry).build())
                             .build()
             );

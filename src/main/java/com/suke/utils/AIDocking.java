@@ -4,6 +4,7 @@ import com.suke.common.ErrorCode;
 import com.suke.common.Result;
 import com.suke.config.ChartTypeTemplateConfig;
 import com.suke.exception.AIDockingException;
+import com.suke.tool.KnowledgeSearchTool;
 import jakarta.annotation.Resource;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -13,6 +14,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -39,6 +41,12 @@ public class AIDocking {
     private PromptBuilder promptBuilder;
     @Autowired
     private ChartTypeTemplateConfig chartTypeTemplateConfig;
+
+    @Autowired
+    private KnowledgeSearchTool knowledgeSearchTool;
+
+    @Value("${rag.enabled:false}")
+    private boolean ragEnabled;
 
 //    // 数据分析师提示词
 //    private static final String DATA_ANALYST_PROMPT = """
@@ -79,10 +87,23 @@ public class AIDocking {
         if(!chartTypeTemplateConfig.supportsChartType(chartType)){
             throw new AIDockingException("不支持的图表类型");
         }
-        String systemPrompt = promptBuilder.buildPrompt(chartType);
-        String userMessage = "分析需求：" + requirement + "\n" +
-                (StringUtils.isNotBlank(chartType) ? "图表类型：" + chartType + "\n" : "") +
-                "原始数据：\n" + csvData;
+        String systemPrompt;
+        String userMessage;
+        if (ragEnabled) {
+            String knowledge = fetchKnowledge(requirement);
+            if (knowledge != null) {
+                log.info("RAG增强分析，知识检索成功");
+                systemPrompt = promptBuilder.buildEnhancedPrompt(requirement, knowledge, csvData, chartType);
+                userMessage = "请按照上述要求进行数据分析";
+            } else {
+                log.info("RAG知识检索无结果，回退标准分析");
+                systemPrompt = promptBuilder.buildPrompt(chartType);
+                userMessage = buildUserMessage(requirement, chartType, csvData);
+            }
+        } else {
+            systemPrompt = promptBuilder.buildPrompt(chartType);
+            userMessage = buildUserMessage(requirement, chartType, csvData);
+        }
         String result = qwenClient.prompt()
                 .system(systemPrompt)
                 .user(userMessage)
@@ -93,6 +114,27 @@ public class AIDocking {
         }
         log.info("AI输出：{}",result);
         return result;
+    }
+
+    private String buildUserMessage(String requirement, String chartType, String csvData) {
+        return "分析需求：" + requirement + "\n" +
+                (StringUtils.isNotBlank(chartType) ? "图表类型：" + chartType + "\n" : "") +
+                "原始数据：\n" + csvData;
+    }
+
+    private String fetchKnowledge(String goal) {
+        try {
+            String result = knowledgeSearchTool.searchKnowledge(goal);
+            if (result != null
+                    && !result.startsWith("知识库搜索失败")
+                    && !result.startsWith("未找到")) {
+                return result;
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("RAG知识检索失败，回退到标准分析: {}", e.getMessage());
+            return null;
+        }
     }
 
 
