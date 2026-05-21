@@ -6,6 +6,15 @@
  ID 策略: 雪花算法（应用层 ASSIGN_ID，非数据库自增）
 */
 
+
+-- Migration: chart.status VARCHAR → ENUM
+-- Values correspond to com.suke.common.ChartStatus constants
+-- 修改status的类型为枚举
+ALTER TABLE `chart` MODIFY COLUMN `status` ENUM('wait', 'running', 'succeed', 'failed')
+    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'wait'
+    COMMENT '状态: wait / running / succeed / failed';
+
+
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 

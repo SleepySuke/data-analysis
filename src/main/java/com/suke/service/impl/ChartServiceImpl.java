@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.rholder.retry.Retryer;
 import com.suke.common.AnalysisResult;
+import com.suke.common.ChartStatus;
 import com.suke.common.WebSocketMessage;
 import com.suke.config.RetryConfig;
 import com.suke.context.UserContext;
@@ -25,7 +26,6 @@ import com.suke.service.IChartService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.suke.service.IUserService;
 import com.suke.utils.*;
-import io.netty.handler.timeout.TimeoutException;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -254,7 +254,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
                 .setGenChart(analysisResult.getChartConfig())//图表配置
                 .setGenResult(analysisResult.getAnalysis())//图表结果
                 .setUserId(userId)
-                .setStatus("succeed")
+                .setStatus(ChartStatus.SUCCEED)
                 .setExecMsg("分析成功");
         ;
         log.info("保存的图表信息：{}", chart);
@@ -262,7 +262,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         //csv数据文件过大时存放至minio中，返回路径
         if(StringUtils.isNotBlank(minioPath)){
             chart.setMinioPath(minioPath);
-            chart.setChartData("文件数据过大，才minio中");
+            chart.setChartData("文件数据过大，在minio中");
         }
 
         boolean save = this.save(chart);
@@ -315,9 +315,10 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         //分析结果还未生成，仅保存图表名称等简单参数
         chart.setName(fileName)
                 .setChartType(chartType)
-                .setChartData(csvData)
                 .setGoal(goal);
-        chart.setStatus("wait");
+        String chartData = uploadCsvIfLarge(chart, csvData, userId);
+        chart.setChartData(chartData);
+        chart.setStatus(ChartStatus.WAIT);
         chart.setUserId(userId);
         boolean save = this.save(chart);
         if (!save) {
@@ -338,7 +339,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
                     //此时处理数据，需要将状态进行修改
                     Chart updateChart = new Chart();
                     updateChart.setId(chart.getId());
-                    updateChart.setStatus("running");
+                    updateChart.setStatus(ChartStatus.RUNNING);
                     boolean update = this.updateById(updateChart);
                     if (!update) {
                         log.error("更新图表信息失败");
@@ -361,7 +362,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
                     AnalysisResult analysisResult = ParseAIResponse.parseResponse(result);
                     Chart resChart = new Chart();
                     resChart.setId(asyncChartId);
-                    resChart.setStatus("succeed");
+                    resChart.setStatus(ChartStatus.SUCCEED);
                     resChart.setGenChart(analysisResult.getChartConfig());
                     resChart.setGenResult(analysisResult.getAnalysis());
                     resChart.setExecMsg("分析成功");
@@ -378,7 +379,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
                     log.error("分析任务执行异常，图表ID: {}", asyncChartId, e);
                     Chart errorChart = new Chart();
                     errorChart.setId(asyncChartId);
-                    errorChart.setStatus("failed");
+                    errorChart.setStatus(ChartStatus.FAILED);
                     errorChart.setExecMsg("分析失败: " + e.getMessage());
                     this.updateById(errorChart);
                     webSocketServer.sendMessageToUser(asyncUserId.toString(), buildWsMsg("analysis_status", "分析失败", "failed", asyncChartId));
@@ -390,7 +391,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
             log.error("任务提交被拒绝，系统繁忙，图表ID: {}", asyncChartId);
             Chart rejectedChart = new Chart();
             rejectedChart.setId(asyncChartId);
-            rejectedChart.setStatus("failed");
+            rejectedChart.setStatus(ChartStatus.FAILED);
             rejectedChart.setExecMsg("系统繁忙，请稍后再试");
             this.updateById(rejectedChart);
             webSocketServer.sendMessageToUser(asyncUserId.toString(), buildWsMsg("analysis_status", "系统繁忙，请稍后再试", "failed", asyncChartId));
@@ -441,9 +442,10 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         //分析结果还未生成，仅保存图表名称等简单参数
         chart.setName(fileName)
                 .setChartType(chartType)
-                .setChartData(csvData)
                 .setGoal(goal);
-        chart.setStatus("wait");
+        String chartData = uploadCsvIfLarge(chart, csvData, userId);
+        chart.setChartData(chartData);
+        chart.setStatus(ChartStatus.WAIT);
         chart.setUserId(userId);
         boolean save = save(chart);
         if (!save) {
@@ -565,7 +567,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
         String goal = fileDTO.getGoal();
         String chartType = fileDTO.getChartType();
         if (StringUtils.isAnyBlank(fileName)) {
-            throw new BaseException("文件名称过长");
+            throw new BaseException("文件名称为空");
         }
         if (StringUtils.isAnyBlank(goal)) {
             throw new BaseException("分析目标为空");
@@ -615,6 +617,18 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart> implements
             throw new BaseException("数据为空");
         }
         return csv;
+    }
+
+    private static final int CSV_DB_THRESHOLD = 1024 * 1024;
+
+    private String uploadCsvIfLarge(Chart chart, String csvData, Long userId) {
+        if (csvData.getBytes(StandardCharsets.UTF_8).length > CSV_DB_THRESHOLD) {
+            String csvFileName = "csv/" + userId + "/" + System.currentTimeMillis() + ".csv";
+            String minioPath = minioUtil.uploadCsvFile(csvData, csvFileName);
+            chart.setMinioPath(minioPath);
+            return "文件数据过大，在minio中";
+        }
+        return csvData;
     }
 
     private WebSocketMessage buildWsMsg(String type, String message, String status, Long chartId) {

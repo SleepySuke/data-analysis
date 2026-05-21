@@ -162,6 +162,6 @@ public class AIDocking {
      * @return
      */
     public Flux<String> doChatStream(String msg){
-        return null;
+        return Flux.empty();
     }
 }

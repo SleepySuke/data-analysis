@@ -3,6 +3,7 @@ package com.suke.config;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -14,7 +15,7 @@ import java.util.Map;
 @Component
 public class ChartTypeTemplateConfig {
 
-    private final Map<String, String> chartTypeTemplateMap = new HashMap<>();
+    private Map<String, String> chartTypeTemplateMap = new HashMap<>();
     @PostConstruct
     public void init() {
         // 折线图模板
@@ -156,9 +157,8 @@ public class ChartTypeTemplateConfig {
               }]
             }
             """);
+        chartTypeTemplateMap = Collections.unmodifiableMap(chartTypeTemplateMap);
     }
-
-    //获取模版
     public String getTemplate(String chartType) {
         return chartTypeTemplateMap.getOrDefault(chartType, chartTypeTemplateMap.get("bar")); // 默认柱状图
     }

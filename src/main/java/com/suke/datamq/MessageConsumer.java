@@ -2,6 +2,7 @@ package com.suke.datamq;
 
 import com.rabbitmq.client.Channel;
 import com.suke.common.AnalysisResult;
+import com.suke.common.ChartStatus;
 import com.suke.constant.BIConstant;
 import com.suke.domain.entity.Chart;
 import com.suke.service.IChartService;
@@ -67,7 +68,7 @@ public class MessageConsumer {
         }
         Chart updateChart = new Chart();
         updateChart.setId(chart.getId());
-        updateChart.setStatus("running");
+        updateChart.setStatus(ChartStatus.RUNNING);
         boolean updateResult = chartService.updateById(updateChart);
         if (!updateResult) {
             channel.basicNack(deliveryTag, false, false);
@@ -87,7 +88,7 @@ public class MessageConsumer {
             resChart.setId(updateChart.getId());
             resChart.setGenChart(analysisResult.getChartConfig());
             resChart.setGenResult(analysisResult.getAnalysis());
-            resChart.setStatus("succeed");
+            resChart.setStatus(ChartStatus.SUCCEED);
             resChart.setExecMsg("分析成功");
             boolean updateResult1 = chartService.updateById(resChart);
             if (!updateResult1) {
@@ -106,7 +107,7 @@ public class MessageConsumer {
     private void handleChartUpdateError(long chartId, String execMessage) {
         Chart updateChartResult = new Chart();
         updateChartResult.setId(chartId);
-        updateChartResult.setStatus("failed");
+        updateChartResult.setStatus(ChartStatus.FAILED);
         updateChartResult.setExecMsg(execMessage);
         boolean updateResult = chartService.updateById(updateChartResult);
         if (!updateResult) {

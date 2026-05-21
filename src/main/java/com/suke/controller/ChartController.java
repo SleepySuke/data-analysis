@@ -15,6 +15,7 @@ import com.suke.domain.vo.GenChartVO;
 import com.suke.service.IChartService;
 import com.suke.utils.RedisUtils;
 import jakarta.annotation.Resource;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.formula.functions.T;
@@ -51,7 +52,7 @@ public class ChartController {
      * @return
      */
     @PostMapping("/add")
-    public Result<Long> addChart(@RequestBody ChartAddDTO chartAddDTO){
+    public Result<Long> addChart(@RequestBody @Valid ChartAddDTO chartAddDTO){
         log.info("添加图表信息：{}",chartAddDTO);
         if(chartAddDTO == null){
             log.error("添加图表信息参数错误");
@@ -67,7 +68,7 @@ public class ChartController {
      * @return
      */
     @GetMapping("/getChart")
-    public Result<Chart> getChart(Long Id){
+    public Result<Chart> getChart(@RequestParam("Id") Long Id){
         log.info("获取图表信息的id：{}",Id);
         if( Id == null || Id < 0){
             log.error("获取图表信息参数错误");
@@ -93,7 +94,7 @@ public class ChartController {
      * @return
      */
     @GetMapping("/getChartEdit")
-    public Result<Chart> editChart(Long Id){
+    public Result<Chart> editChart(@RequestParam("Id") Long Id){
         log.info("获取要修改图表信息的id：{}",Id);
         if( Id == null || Id < 0){
             log.error("图表信息参数错误");
@@ -230,7 +231,7 @@ public class ChartController {
      */
     @AuthCheck
     @PostMapping("/my/list/page")
-    public Result<Page<Chart>> getMyChartList(@RequestBody ChartPageQueryDTO chartPageQueryDTO){
+    public Result<Page<Chart>> getMyChartList(@RequestBody @Valid ChartPageQueryDTO chartPageQueryDTO){
         log.info("获取我的图表列表：{}",chartPageQueryDTO);
         if(chartPageQueryDTO == null){
             log.error("获取我的图表列表参数错误");
@@ -248,7 +249,7 @@ public class ChartController {
      */
     @AuthCheck
     @PostMapping("/editChart")
-    public Result editMyChart(@RequestBody ChartEditDTO chartEditDTO){
+    public Result editMyChart(@RequestBody @Valid ChartEditDTO chartEditDTO){
         log.info("修改我的图表信息：{}",chartEditDTO);
         if(chartEditDTO == null){
             log.error("修改我的图表信息参数错误");

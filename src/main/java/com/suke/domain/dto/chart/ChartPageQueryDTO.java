@@ -1,51 +1,30 @@
 package com.suke.domain.dto.chart;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.io.Serializable;
 
-/**
- * @author 自然醒
- * @version 1.0
- */
-// 查询图表信息
 @Data
 public class ChartPageQueryDTO implements Serializable {
     private static final long serialVersionUID = 45123687L;
-    /**
-     * 图表类型
-     */
+
     private String chartType;
-    /**
-     *页码
-     */
+
+    @NotNull(message = "页码不能为空")
+    @Min(value = 1, message = "页码不能小于1")
     private Integer page;
-    /**
-     * 分析的目标
-     */
+
     private String goal;
-    /**
-     * 图表id
-     */
     private Integer id;
-    /**
-     * 图表名称
-     */
     private String name;
-    /**
-     * 每页记录数
-     */
+
+    @NotNull(message = "每页记录数不能为空")
+    @Min(value = 1, message = "每页记录数不能小于1")
     private Integer pageSize;
-    /**
-     * 排序字段
-     */
+
     private String sortField;
-    /**
-     * 排序顺序（默认升序）
-     */
     private String sortOrder;
-    /**
-     * 用户id
-     */
     private Integer userId;
 }

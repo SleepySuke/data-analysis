@@ -1,36 +1,24 @@
 package com.suke.domain.dto.chart;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.io.Serializable;
 
-/**
- * @author 自然醒
- * @version 1.0
- */
-// 图表信息修改
 @Data
 public class ChartEditDTO implements Serializable {
     private static final long serialVersionUID = 454238792316L;
 
-    /**
-     * 图表id
-     */
+    @NotNull(message = "图表ID不能为空")
     private Long id;
 
-    /**
-     * 图表名称
-     */
+    @NotBlank(message = "图表名称不能为空")
     private String name;
 
-    /**
-     * 分析目标
-     */
+    @NotBlank(message = "分析目标不能为空")
     private String goal;
 
-    /**
-     * 图表类型
-     */
+    @NotBlank(message = "图表类型不能为空")
     private String chartType;
-
 }

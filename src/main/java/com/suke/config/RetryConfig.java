@@ -22,7 +22,7 @@ public class RetryConfig {
         return RetryerBuilder.<String>newBuilder()
                 .retryIfException(this::isRetryable)
                 .retryIfResult(StringUtils::isBlank)
-                .withWaitStrategy(WaitStrategies.fixedWait(2, TimeUnit.SECONDS))
+                .withWaitStrategy(WaitStrategies.exponentialWait(1000, 8000, TimeUnit.MILLISECONDS))
                 .withStopStrategy(StopStrategies.stopAfterAttempt(3))
                 .withBlockStrategy(BlockStrategies.threadSleepStrategy())
                 .withRetryListener(new RetryListener(){
@@ -44,7 +44,7 @@ public class RetryConfig {
         return RetryerBuilder.<String>newBuilder()
                 .retryIfException(this::isRetryable)
                 .retryIfResult(StringUtils::isBlank)
-                .withWaitStrategy(WaitStrategies.fixedWait(2, TimeUnit.SECONDS))
+                .withWaitStrategy(WaitStrategies.exponentialWait(1000, 8000, TimeUnit.MILLISECONDS))
                 .withStopStrategy(StopStrategies.stopAfterAttempt(3))
                 .withBlockStrategy(BlockStrategies.threadSleepStrategy())
                 .withRetryListener(new RetryListener() {
