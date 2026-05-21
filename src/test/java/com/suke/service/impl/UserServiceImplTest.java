@@ -1,6 +1,7 @@
 package com.suke.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.suke.common.ErrorCode;
 import com.suke.context.UserContext;
 import com.suke.domain.dto.user.UserLoginDTO;
@@ -11,6 +12,7 @@ import com.suke.exception.FailRegisterException;
 import com.suke.mapper.UserMapper;
 import com.suke.properties.JWTProperties;
 import com.suke.utils.JWTUtil;
+import com.suke.utils.PasswordEncoder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,10 +27,12 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.util.DigestUtils;
+
+import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,25 +54,37 @@ class UserServiceImplTest {
     @Mock
     private RLock rLock;
 
-    private static final String SALT = "suke";
+    @Mock
+    private PasswordEncoder passwordEncoder;
 
-    private String encryptPassword(String raw) {
-        return DigestUtils.md5DigestAsHex((SALT + raw).getBytes());
-    }
+    private static final String MOCK_BCRYPT_HASH = "$2a$10$abcdefghijklmnopqrstuvwxABCDEFGHIJ1234567890abcdefghijklm";
 
     private User buildTestUser() {
         User user = new User();
         user.setId(1L);
         user.setUserAccount("testuser");
-        user.setUserPassword(encryptPassword("password123"));
+        user.setUserPassword(MOCK_BCRYPT_HASH);
+        user.setUserRole("user");
+        return user;
+    }
+
+    private User buildTestUserWithMd5() {
+        User user = new User();
+        user.setId(1L);
+        user.setUserAccount("testuser");
+        user.setUserPassword("5d5c5b5a5e5f50515253545556575859");
         user.setUserRole("user");
         return user;
     }
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         UserContext.setCurrentId(1L);
         when(redissonClient.getLock(anyString())).thenReturn(rLock);
+        // Inject baseMapper into ServiceImpl for getById() support
+        Field baseMapperField = ServiceImpl.class.getDeclaredField("baseMapper");
+        baseMapperField.setAccessible(true);
+        baseMapperField.set(userService, userMapper);
     }
 
     @AfterEach
@@ -83,6 +99,8 @@ class UserServiceImplTest {
     void login_success() {
         User user = buildTestUser();
         when(userMapper.selectOne(any(QueryWrapper.class))).thenReturn(user);
+        when(passwordEncoder.matches("password123", MOCK_BCRYPT_HASH)).thenReturn(true);
+        when(passwordEncoder.needsUpgrade(MOCK_BCRYPT_HASH)).thenReturn(false);
         when(jwtProperties.getSecretKey()).thenReturn("test-secret-key-for-unit-test-1234567890");
         when(jwtProperties.getTtl()).thenReturn(3600000L);
 
@@ -157,6 +175,7 @@ class UserServiceImplTest {
     void login_wrongPassword_shouldThrow() {
         User user = buildTestUser();
         when(userMapper.selectOne(any(QueryWrapper.class))).thenReturn(user);
+        when(passwordEncoder.matches("wrongpassword", MOCK_BCRYPT_HASH)).thenReturn(false);
 
         UserLoginDTO dto = new UserLoginDTO();
         dto.setUserAccount("testuser");
@@ -166,10 +185,15 @@ class UserServiceImplTest {
     }
 
     @Test
-    @DisplayName("登录-密码使用MD5加盐加密验证")
-    void login_passwordEncryption_md5WithSalt() {
-        User user = buildTestUser();
+    @DisplayName("登录-MD5密码自动升级为BCrypt")
+    void login_md5Password_autoUpgradeToBcrypt() {
+        User user = buildTestUserWithMd5();
+        String md5Hash = user.getUserPassword();
         when(userMapper.selectOne(any(QueryWrapper.class))).thenReturn(user);
+        when(passwordEncoder.matches("password123", md5Hash)).thenReturn(true);
+        when(passwordEncoder.needsUpgrade(md5Hash)).thenReturn(true);
+        when(passwordEncoder.encode("password123")).thenReturn(MOCK_BCRYPT_HASH);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
         when(jwtProperties.getSecretKey()).thenReturn("test-secret-key-for-unit-test-1234567890");
         when(jwtProperties.getTtl()).thenReturn(3600000L);
 
@@ -183,8 +207,32 @@ class UserServiceImplTest {
 
             var result = userService.userLogin(dto, null);
             assertNotNull(result);
-            // Verify selectOne was called — confirms password comparison happened
-            verify(userMapper).selectOne(any(QueryWrapper.class));
+            verify(passwordEncoder).encode("password123");
+            verify(userMapper).updateById(any(User.class));
+        }
+    }
+
+    @Test
+    @DisplayName("登录-BCrypt密码不触发升级")
+    void login_bcryptPassword_noUpgrade() {
+        User user = buildTestUser();
+        when(userMapper.selectOne(any(QueryWrapper.class))).thenReturn(user);
+        when(passwordEncoder.matches("password123", MOCK_BCRYPT_HASH)).thenReturn(true);
+        when(passwordEncoder.needsUpgrade(MOCK_BCRYPT_HASH)).thenReturn(false);
+        when(jwtProperties.getSecretKey()).thenReturn("test-secret-key-for-unit-test-1234567890");
+        when(jwtProperties.getTtl()).thenReturn(3600000L);
+
+        UserLoginDTO dto = new UserLoginDTO();
+        dto.setUserAccount("testuser");
+        dto.setUserPassword("password123");
+
+        try (MockedStatic<JWTUtil> jwtMock = mockStatic(JWTUtil.class)) {
+            jwtMock.when(() -> JWTUtil.createJWT(anyString(), anyLong(), any()))
+                    .thenReturn("mock-token");
+
+            userService.userLogin(dto, null);
+            verify(passwordEncoder, never()).encode(anyString());
+            verify(userMapper, never()).updateById(any(User.class));
         }
     }
 
@@ -194,6 +242,7 @@ class UserServiceImplTest {
     @DisplayName("注册-正常路径")
     void register_success() {
         when(userMapper.selectCount(any(QueryWrapper.class))).thenReturn(0L);
+        when(passwordEncoder.encode("password123")).thenReturn(MOCK_BCRYPT_HASH);
         when(userMapper.insert(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
             user.setId(100L);
@@ -267,9 +316,10 @@ class UserServiceImplTest {
     }
 
     @Test
-    @DisplayName("注册-密码应使用MD5加盐存储")
-    void register_passwordShouldBeMd5Encrypted() {
+    @DisplayName("注册-密码应使用BCrypt编码")
+    void register_passwordShouldBeBcryptEncoded() {
         when(userMapper.selectCount(any(QueryWrapper.class))).thenReturn(0L);
+        when(passwordEncoder.encode("password123")).thenReturn(MOCK_BCRYPT_HASH);
         when(userMapper.insert(any(User.class))).thenReturn(1);
 
         UserRegisterDTO dto = new UserRegisterDTO();
@@ -283,9 +333,8 @@ class UserServiceImplTest {
         verify(userMapper).insert(userCaptor.capture());
 
         String storedPassword = userCaptor.getValue().getUserPassword();
-        String expectedPassword = encryptPassword("password123");
-        assertEquals(expectedPassword, storedPassword);
-        assertNotEquals("password123", storedPassword);
+        assertEquals(MOCK_BCRYPT_HASH, storedPassword);
+        verify(passwordEncoder).encode("password123");
     }
 
     // ========== getLoginUser tests ==========
@@ -300,14 +349,76 @@ class UserServiceImplTest {
     @Test
     @DisplayName("获取登录用户-正常返回")
     void getLoginUser_success() {
-        // UserServiceImpl extends ServiceImpl which uses baseMapper internally
-        // We can't easily mock getById without Spy, so test via mapper directly
         User user = buildTestUser();
         when(userMapper.selectById(1L)).thenReturn(user);
 
-        // Verify the mapper returns correct user
-        User result = userMapper.selectById(1L);
+        User result = userService.getLoginUser(null);
         assertNotNull(result);
         assertEquals("testuser", result.getUserAccount());
+    }
+
+    // ========== Boundary tests ==========
+
+    @Test
+    @DisplayName("登录-账号最小长度4通过验证")
+    void login_accountMinLength_success() {
+        User user = buildTestUser();
+        user.setUserAccount("abcd");
+        when(userMapper.selectOne(any(QueryWrapper.class))).thenReturn(user);
+        when(passwordEncoder.matches("password123", MOCK_BCRYPT_HASH)).thenReturn(true);
+        when(passwordEncoder.needsUpgrade(MOCK_BCRYPT_HASH)).thenReturn(false);
+        when(jwtProperties.getSecretKey()).thenReturn("test-secret-key-for-unit-test-1234567890");
+        when(jwtProperties.getTtl()).thenReturn(3600000L);
+
+        UserLoginDTO dto = new UserLoginDTO();
+        dto.setUserAccount("abcd");
+        dto.setUserPassword("password123");
+
+        try (MockedStatic<JWTUtil> jwtMock = mockStatic(JWTUtil.class)) {
+            jwtMock.when(() -> JWTUtil.createJWT(anyString(), anyLong(), any()))
+                    .thenReturn("mock-token");
+            assertNotNull(userService.userLogin(dto, null));
+        }
+    }
+
+    @Test
+    @DisplayName("登录-密码最小长度8通过验证")
+    void login_passwordMinLength_success() {
+        User user = buildTestUser();
+        when(userMapper.selectOne(any(QueryWrapper.class))).thenReturn(user);
+        when(passwordEncoder.matches("12345678", MOCK_BCRYPT_HASH)).thenReturn(true);
+        when(passwordEncoder.needsUpgrade(MOCK_BCRYPT_HASH)).thenReturn(false);
+        when(jwtProperties.getSecretKey()).thenReturn("test-secret-key-for-unit-test-1234567890");
+        when(jwtProperties.getTtl()).thenReturn(3600000L);
+
+        UserLoginDTO dto = new UserLoginDTO();
+        dto.setUserAccount("testuser");
+        dto.setUserPassword("12345678");
+
+        try (MockedStatic<JWTUtil> jwtMock = mockStatic(JWTUtil.class)) {
+            jwtMock.when(() -> JWTUtil.createJWT(anyString(), anyLong(), any()))
+                    .thenReturn("mock-token");
+            assertNotNull(userService.userLogin(dto, null));
+        }
+    }
+
+    @Test
+    @DisplayName("注册-账号最小长度4通过验证")
+    void register_accountMinLength_success() {
+        when(userMapper.selectCount(any(QueryWrapper.class))).thenReturn(0L);
+        when(passwordEncoder.encode("password123")).thenReturn(MOCK_BCRYPT_HASH);
+        when(userMapper.insert(any(User.class))).thenAnswer(invocation -> {
+            User user = invocation.getArgument(0);
+            user.setId(100L);
+            return 1;
+        });
+
+        UserRegisterDTO dto = new UserRegisterDTO();
+        dto.setUserAccount("abcd");
+        dto.setUserPassword("password123");
+        dto.setCheckPassword("password123");
+
+        Long id = userService.userRegister(dto, null);
+        assertEquals(100L, id);
     }
 }

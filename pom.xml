@@ -195,6 +195,11 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- BCrypt password encoding -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
 <!--        <dependency>-->
 <!--            <groupId>redis.clients</groupId>-->
 <!--            <artifactId>jedis</artifactId>-->

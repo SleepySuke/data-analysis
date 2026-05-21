@@ -15,6 +15,7 @@ import com.suke.properties.JWTProperties;
 import com.suke.service.IUserService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.suke.utils.JWTUtil;
+import com.suke.utils.PasswordEncoder;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,7 +26,6 @@ import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.DigestUtils;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -43,15 +43,14 @@ import java.util.Map;
 @Slf4j
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IUserService {
 
-    //加密的盐值
-    private static final String SALT = "suke";
-
     @Autowired
     private UserMapper userMapper;
     @Resource
     private JWTProperties jwtProperties;
     @Autowired
     private RedissonClient redissonClient;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Transactional(rollbackFor = Exception.class)
     @Override
@@ -78,11 +77,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             log.error("用户不存在");
             throw new FailLoginException(ErrorCode.PARAMS_ERROR.getMessage());
         }
-        String encryptPasswd = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
-        String correctPasswd = user.getUserPassword();
-        if (!encryptPasswd.equals(correctPasswd)) {
+        if (!passwordEncoder.matches(userPassword, user.getUserPassword())) {
             log.error("用户密码错误");
             throw new FailLoginException(ErrorCode.PARAMS_ERROR.getMessage());
+        }
+        // 惰性升级：MD5 → BCrypt
+        if (passwordEncoder.needsUpgrade(user.getUserPassword())) {
+            user.setUserPassword(passwordEncoder.encode(userPassword));
+            userMapper.updateById(user);
         }
         Map<String, Object> claims = new HashMap<>();
         claims.put("id", user.getId());
@@ -133,7 +135,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                 log.error("用户已存在");
                 throw new FailRegisterException(ErrorCode.PARAMS_ERROR.getMessage());
             }
-            String encryptPasswd = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
+            String encryptPasswd = passwordEncoder.encode(userPassword);
             User user = new User();
             user.setUserAccount(userAccount);
             user.setUserPassword(encryptPasswd);
