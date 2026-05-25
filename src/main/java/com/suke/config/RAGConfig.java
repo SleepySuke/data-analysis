@@ -32,7 +32,7 @@ public class RAGConfig {
     private String vectorPrefix = "vec:knowledge:";
     private String knowledgeContent = "knowledge_content";
     private String metadataPrefix = "meta:knowledge:";
-    private int embeddingDimensions = 1536;
+    private int embeddingDimensions = 1024;
 
     @Bean
     public RestTemplate restTemplate() {
@@ -61,7 +61,7 @@ public class RAGConfig {
                         RedisVectorStore.MetadataField.tag("source")
                 )
                 .initializeSchema(true)
-                .vectorAlgorithm(RedisVectorStore.Algorithm.HSNW)
+                .vectorAlgorithm(RedisVectorStore.Algorithm.HNSW)
                 .build();
     }
 
