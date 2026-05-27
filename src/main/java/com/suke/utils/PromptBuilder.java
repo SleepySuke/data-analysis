@@ -14,7 +14,7 @@ public class PromptBuilder {
     @Autowired
     private ChartTypeTemplateConfig chartTypeTemplateConfig;
 
-    // 数据分析师提示词
+    // TODO: 待 Agent 架构完全替代 AIDocking 后废弃此类，提示词统一到 AgentPrompts
     private static final String DATA_ANALYST_PROMPT = """
         你是一个专业的数据分析师和前端ECharts专家。请根据用户选择的图表类型和数据分析需求，生成相应的分析结论和ECharts配置，必须严格按照以下格式响应：
 
