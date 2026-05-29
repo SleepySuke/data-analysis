@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description 图表生成工具，根据分析结果生成ECharts配置JSON
+ */
+
 package com.suke.agent.tool.analysis;
 
 import com.suke.config.ChartTypeTemplateConfig;

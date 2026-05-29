@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description 统计分析工具，计算均值/中位数/标准差/相关系数等
+ */
+
 package com.suke.agent.tool.analysis;
 
 import com.alibaba.fastjson2.JSON;

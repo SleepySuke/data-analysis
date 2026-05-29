@@ -1,0 +1,30 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description 数据保留调度器，定时清理过期交互日志
+ */
+
+package com.suke.agent.config;
+
+import com.suke.agent.memory.mapper.InteractionLogMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class DataRetentionScheduler {
+
+    private final InteractionLogMapper interactionLogMapper;
+
+    @Scheduled(cron = "0 0 3 * * *")
+    public void purgeOldInteractionLogs() {
+        int deleted = interactionLogMapper.purgeOldLogs();
+        if (deleted > 0) {
+            log.info("Purged {} interaction logs older than 90 days", deleted);
+        }
+    }
+}

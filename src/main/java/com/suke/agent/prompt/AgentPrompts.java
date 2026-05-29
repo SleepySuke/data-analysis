@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description Agent提示词常量定义，包含各Agent的系统指令
+ */
+
 package com.suke.agent.prompt;
 
 public final class AgentPrompts {

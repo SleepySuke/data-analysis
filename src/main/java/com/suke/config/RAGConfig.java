@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description RAG配置类，条件化配置向量存储和知识库加载
+ */
+
 package com.suke.config;
 
 import lombok.Data;
@@ -7,6 +14,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.redis.RedisVectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
@@ -20,6 +28,7 @@ import java.time.Duration;
  * @version 1.0
  */
 @Configuration
+@ConditionalOnProperty(name = "rag.enabled", havingValue = "true")
 @ConfigurationProperties(prefix = "rag.redis")
 @Slf4j
 @Data

@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description 追踪控制器，查询Agent执行追踪记录
+ */
+
 package com.suke.agent.controller;
 
 import com.suke.agent.trace.AgentTrace;

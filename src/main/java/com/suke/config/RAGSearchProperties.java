@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description RAG检索配置属性，相似度阈值、TopK等参数
+ */
+
 package com.suke.config;
 
 import lombok.Data;

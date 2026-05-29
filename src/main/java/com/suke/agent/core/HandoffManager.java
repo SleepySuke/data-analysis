@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description Agent间任务转交管理器，白名单校验、循环检测、次数限制
+ */
+
 package com.suke.agent.core;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;

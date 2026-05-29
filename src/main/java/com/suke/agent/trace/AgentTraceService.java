@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description Agent追踪服务，异步持久化和查询追踪记录
+ */
+
 package com.suke.agent.trace;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;

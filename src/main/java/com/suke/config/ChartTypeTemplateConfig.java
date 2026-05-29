@@ -10,6 +10,8 @@ import java.util.Map;
 /**
  * @author 自然醒
  * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description 图表类型模板配置，7种ECharts图表模板
  */
 //图表类型的模版,用于返回不同的json文件配置渲染给数据
 @Component

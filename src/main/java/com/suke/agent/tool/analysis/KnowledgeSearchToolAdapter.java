@@ -1,11 +1,20 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description 知识库检索适配器，封装KnowledgeSearchTool为Agent工具
+ */
+
 package com.suke.agent.tool.analysis;
 
 import com.suke.tool.KnowledgeSearchTool;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnBean(KnowledgeSearchTool.class)
 public class KnowledgeSearchToolAdapter {
 
     private final KnowledgeSearchTool knowledgeSearchTool;

@@ -7,6 +7,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -31,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @description 知识库的引入构建，增强agent的检索
  */
 @Component
+@ConditionalOnProperty(name = "rag.enabled", havingValue = "true")
 @Slf4j
 public class KnowledgeMap {
     @Autowired

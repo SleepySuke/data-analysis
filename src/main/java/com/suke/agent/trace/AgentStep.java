@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description Agent执行步骤记录，追踪多步推理过程
+ */
+
 package com.suke.agent.trace;
 
 import lombok.AllArgsConstructor;

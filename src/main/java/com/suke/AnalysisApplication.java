@@ -5,6 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -14,8 +15,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 //todo 开启Redis的话 移除exclude中内容
 @SpringBootApplication
 @EnableScheduling
+@EnableAsync
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
-@MapperScan("com.suke.mapper")
+@MapperScan({"com.suke.mapper", "com.suke.agent"})
 public class AnalysisApplication {
     public static void main(String[] args) {
         SpringApplication.run(AnalysisApplication.class, args);

@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description Agent响应封装，包含输出、token用量、耗时、状态
+ */
+
 package com.suke.agent.core;
 
 import lombok.AllArgsConstructor;

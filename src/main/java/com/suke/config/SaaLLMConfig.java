@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description LLM模型配置，创建Qwen和DeepSeek的ChatModel/ChatClient
+ */
+
 package com.suke.config;
 
 import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;

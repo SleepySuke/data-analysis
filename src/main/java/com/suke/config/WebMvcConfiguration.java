@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description WebMvcConfiguration
+ */
+
 package com.suke.config;
 
 import com.suke.interceptor.JwtTokenInterceptor;

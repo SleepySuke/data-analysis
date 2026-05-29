@@ -1,11 +1,22 @@
 package com.suke.agent.core;
 
+import com.suke.agent.memory.ConversationHistoryManager;
+import com.suke.agent.memory.LongTermMemoryStore;
+import com.suke.agent.memory.TopicExtractor;
+import com.suke.agent.memory.UserBehaviorTracker;
+import com.suke.agent.memory.WorkingMemory;
+import com.suke.agent.memory.UserProfileInjector;
+import com.suke.agent.memory.mapper.InteractionLogMapper;
+import com.suke.agent.memory.mapper.UserProfileMapper;
+import com.suke.agent.skill.SkillManager;
+import com.suke.agent.skill.mapper.AgentSkillMapper;
 import com.suke.agent.trace.AgentTraceService;
 import com.suke.agent.trace.mapper.AgentTraceMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class AgentOrchestratorTest {
@@ -14,6 +25,11 @@ class AgentOrchestratorTest {
     private AgentRegistry registry;
     private AgentTraceService traceService;
     private HandoffManager handoffManager;
+    private LongTermMemoryStore memoryStore;
+    private SkillManager skillManager;
+    private UserBehaviorTracker behaviorTracker;
+    private ConversationHistoryManager historyManager;
+    private TopicExtractor topicExtractor;
 
     @BeforeEach
     void setUp() {
@@ -21,7 +37,35 @@ class AgentOrchestratorTest {
         AgentTraceMapper traceMapper = mock(AgentTraceMapper.class);
         traceService = new AgentTraceService(traceMapper);
         handoffManager = new HandoffManager(registry, traceService);
-        orchestrator = new AgentOrchestrator(registry, traceService, handoffManager);
+
+        UserProfileMapper userProfileMapper = mock(UserProfileMapper.class);
+        InteractionLogMapper interactionLogMapper = mock(InteractionLogMapper.class);
+        memoryStore = new LongTermMemoryStore(userProfileMapper, interactionLogMapper, new UserProfileInjector());
+
+        AgentSkillMapper skillMapper = mock(AgentSkillMapper.class);
+        skillManager = new SkillManager(skillMapper);
+
+        behaviorTracker = mock(UserBehaviorTracker.class);
+
+        historyManager = mock(ConversationHistoryManager.class);
+        when(historyManager.isFirstTurn(anyString())).thenReturn(true);
+
+        topicExtractor = mock(TopicExtractor.class);
+        WorkingMemory workingMemory = mock(WorkingMemory.class);
+        when(workingMemory.buildContext(anyString())).thenReturn("");
+
+        IntentRouter intentRouter = mock(IntentRouter.class);
+        when(intentRouter.route(anyString())).thenAnswer(inv -> {
+            String msg = inv.getArgument(0, String.class).toLowerCase();
+            if (msg.contains("sql") || msg.contains("数据库") || msg.contains("查询"))
+                return "sql_analyst";
+            if (msg.contains("清洗") || msg.contains("缺失值") || msg.contains("异常值") || msg.contains("去重"))
+                return "data_cleaner";
+            return "data_analyst";
+        });
+
+        orchestrator = new AgentOrchestrator(registry, traceService, handoffManager,
+                memoryStore, skillManager, behaviorTracker, historyManager, topicExtractor, workingMemory, intentRouter);
     }
 
     @Test

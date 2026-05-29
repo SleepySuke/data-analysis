@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description Agent执行追踪实体，记录每次调用的完整信息
+ */
+
 package com.suke.agent.trace;
 
 import com.baomidou.mybatisplus.annotation.*;

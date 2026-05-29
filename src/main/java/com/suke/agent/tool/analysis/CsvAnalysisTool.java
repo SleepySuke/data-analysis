@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description CSV分析工具，解析CSV并生成统计摘要
+ */
+
 package com.suke.agent.tool.analysis;
 
 import com.alibaba.fastjson2.JSONArray;

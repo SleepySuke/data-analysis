@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description Agent配置类，注册和初始化所有Agent实例
+ */
+
 package com.suke.agent.config;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;

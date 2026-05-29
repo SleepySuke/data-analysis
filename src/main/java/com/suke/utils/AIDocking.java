@@ -42,7 +42,7 @@ public class AIDocking {
     @Autowired
     private ChartTypeTemplateConfig chartTypeTemplateConfig;
 
-    @Autowired
+    @Autowired(required = false)
     private KnowledgeSearchTool knowledgeSearchTool;
 
     @Value("${rag.enabled:false}")
@@ -123,6 +123,7 @@ public class AIDocking {
     }
 
     private String fetchKnowledge(String goal) {
+        if (knowledgeSearchTool == null) return null;
         try {
             String result = knowledgeSearchTool.searchKnowledge(goal);
             if (result != null

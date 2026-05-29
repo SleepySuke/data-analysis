@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description Agent注册中心，管理所有已注册的Agent描述符
+ */
+
 package com.suke.agent.core;
 
 import lombok.extern.slf4j.Slf4j;

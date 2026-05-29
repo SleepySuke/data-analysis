@@ -1,3 +1,10 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-05-29 02:07
+ * @description 重试配置，提供同步和异步的Guava Retryer
+ */
+
 package com.suke.config;
 
 import com.github.rholder.retry.*;
