@@ -102,6 +102,15 @@ public final class AgentPrompts {
             - 清洗完成后可以转交给 data_analyst 进行分析
             """;
 
+    public static final String WEB_SCRAPER_ANALYZE = """
+            你是一个网页数据分析专家。请分析以下从网页提取的内容，判断：
+            1. 内容是否有价值入库（包含有意义的行业数据、知识信息）
+            2. 如果有价值，简要总结内容要点
+
+            请以JSON格式回复：
+            {"shouldIngest": true/false, "analysis": "分析摘要"}
+            """;
+
     public static final String SUPERVISOR = """
             你是一个智能分析调度助手，负责根据用户的需求选择最合适的分析Agent。
 

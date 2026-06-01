@@ -54,14 +54,8 @@ public class LongTermMemoryStore {
     }
 
     public void updateProfile(Long userId, UserProfile profile) {
-        UserProfile existing = getProfile(userId);
         profile.setUserId(userId);
-        if (existing == null) {
-            userProfileMapper.insert(profile);
-        } else {
-            profile.setId(existing.getId());
-            userProfileMapper.updateById(profile);
-        }
+        userProfileMapper.insertOrUpdate(profile);
     }
 
     public List<String> getRecentTopics(Long userId, int limit) {

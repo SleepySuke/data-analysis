@@ -7,7 +7,7 @@
 
 package com.suke.agent.core;
 
-import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.Agent;
 import lombok.Builder;
 import lombok.Data;
 import org.springframework.ai.tool.ToolCallback;
@@ -22,5 +22,5 @@ public class AgentDescriptor {
     private String prompt;
     private List<ToolCallback> tools;
     private List<String> handoffs;
-    private ReactAgent agent;
+    private Agent agent;
 }

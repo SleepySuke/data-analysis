@@ -168,10 +168,8 @@ public class ScriptExecutionTool {
     }
 
     private String errorJson(String message) {
-        return JSON.toJSONString(Map.of(
-                "exitCode", -1,
+        return JSON.toJSONString(Map.of("exitCode", -1,
                 "error", message,
-                "output", ""
-        ));
+                "output", ""));
     }
 }

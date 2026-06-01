@@ -44,24 +44,24 @@ public class UserProfileInjector {
         sb.append("[用户记忆]\n");
 
         if (relevantFields.contains("industry") && isPresent(profile.getIndustry())) {
-            sb.append("行业: ").append(profile.getIndustry()).append("\n");
+            sb.append("行业: ").append(sanitize(profile.getIndustry())).append("\n");
         }
         if (relevantFields.contains("expertise") && isPresent(profile.getExpertise())) {
-            sb.append("专业领域: ").append(profile.getExpertise()).append("\n");
+            sb.append("专业领域: ").append(sanitize(profile.getExpertise())).append("\n");
         }
         if (relevantFields.contains("preferredCharts") && isPresent(profile.getPreferredCharts())) {
-            sb.append("偏好图表: ").append(profile.getPreferredCharts()).append("\n");
+            sb.append("偏好图表: ").append(sanitize(profile.getPreferredCharts())).append("\n");
         }
         if (relevantFields.contains("detailLevel") && isPresent(profile.getDetailLevel())) {
-            sb.append("详情级别: ").append(profile.getDetailLevel()).append("\n");
+            sb.append("详情级别: ").append(sanitize(profile.getDetailLevel())).append("\n");
         }
         if (relevantFields.contains("reportStyle") && isPresent(profile.getReportStyle())) {
-            sb.append("报告风格: ").append(profile.getReportStyle()).append("\n");
+            sb.append("报告风格: ").append(sanitize(profile.getReportStyle())).append("\n");
         }
 
         // 近期交互主题（来自 InteractionLog 查询）
         if (recentTopics != null && !recentTopics.isEmpty()) {
-            sb.append("近期关注: ").append(String.join(", ", recentTopics)).append("\n");
+            sb.append("近期关注: ").append(sanitize(String.join(", ", recentTopics))).append("\n");
         }
 
         return sb.toString();
@@ -70,6 +70,25 @@ public class UserProfileInjector {
     // 兼容旧接口
     public String inject(UserProfile profile) {
         return inject(profile, null, null);
+    }
+
+    /**
+     * 清洗用户输入，防止提示词注入攻击。
+     * 截断超长字段，过滤包含注入关键词的内容。
+     */
+    private String sanitize(String input) {
+        if (input == null) return "";
+        String truncated = input.length() > 200 ? input.substring(0, 200) : input;
+        // Filter injection patterns
+        String lower = truncated.toLowerCase();
+        String[] dangerousPatterns = {"忽略以上", "ignore previous", "system:", "assistant:", "<system>", "你现在是", "pretend you are", "你是一个"};
+        for (String pattern : dangerousPatterns) {
+            if (lower.contains(pattern)) {
+                log.warn("Detected prompt injection pattern in user profile field, replacing with [filtered]");
+                return "[filtered]";
+            }
+        }
+        return truncated;
     }
 
     private boolean isPresent(String value) {

@@ -13,6 +13,7 @@ import com.suke.agent.domain.dto.SkillCreateDTO;
 import com.suke.agent.domain.vo.SkillVO;
 import com.suke.common.Result;
 import com.suke.context.UserContext;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
@@ -43,12 +44,16 @@ public class SkillController {
     public Result<String> readSkill(
             @PathVariable String skillName,
             @RequestParam(defaultValue = "data_analyst") String agentName) {
+        Long userId = UserContext.getCurrentId();
+        if (userId == null) {
+            return Result.error("请先登录");
+        }
         String content = skillManager.readSkill(skillName, agentName);
         return Result.success(content);
     }
 
     @PostMapping
-    public Result<String> createSkill(@RequestBody SkillCreateDTO request) {
+    public Result<String> createSkill(@Valid @RequestBody SkillCreateDTO request) {
         Long userId = UserContext.getCurrentId();
         if (userId == null) {
             return Result.error("请先登录");

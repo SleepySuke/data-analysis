@@ -7,7 +7,6 @@
 
 package com.suke.agent.core;
 
-import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.suke.agent.trace.AgentTraceService;
 import com.suke.agent.trace.HandoffRecord;
 import lombok.extern.slf4j.Slf4j;

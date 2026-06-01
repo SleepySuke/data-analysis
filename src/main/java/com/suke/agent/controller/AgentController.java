@@ -23,8 +23,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -36,7 +35,10 @@ public class AgentController {
     private final AgentRegistry agentRegistry;
     private final AgentSessionManager sessionManager;
     private final RedisUtils redisUtils;
-    private final ExecutorService sseExecutor = Executors.newCachedThreadPool();
+    private final ExecutorService sseExecutor = new ThreadPoolExecutor(
+            4, 32, 60L, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(100),
+            new ThreadPoolExecutor.CallerRunsPolicy());
 
     public AgentController(AgentOrchestrator orchestrator, AgentRegistry agentRegistry,
                            AgentSessionManager sessionManager, RedisUtils redisUtils) {

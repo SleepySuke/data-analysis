@@ -71,6 +71,10 @@ public class SkillManager {
             return "未找到 Skill: " + skillName;
         }
 
+        // Increment usage count
+        skill.setUsageCount(skill.getUsageCount() != null ? skill.getUsageCount() + 1 : 1);
+        skillMapper.updateById(skill);
+
         StringBuilder sb = new StringBuilder();
         sb.append("[Skill: ").append(skillName).append("]\n");
         sb.append(skill.getPromptTemplate()).append("\n");

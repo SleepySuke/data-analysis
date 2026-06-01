@@ -22,9 +22,13 @@ public class DataRetentionScheduler {
 
     @Scheduled(cron = "0 0 3 * * *")
     public void purgeOldInteractionLogs() {
-        int deleted = interactionLogMapper.purgeOldLogs();
-        if (deleted > 0) {
-            log.info("Purged {} interaction logs older than 90 days", deleted);
+        try {
+            int deleted = interactionLogMapper.purgeOldLogs();
+            if (deleted > 0) {
+                log.info("Purged {} interaction logs older than 90 days", deleted);
+            }
+        } catch (Exception e) {
+            log.error("Failed to purge old interaction logs", e);
         }
     }
 }

@@ -2,6 +2,8 @@ package com.suke.agent.controller;
 
 import com.suke.agent.skill.SkillManager;
 import com.suke.agent.skill.model.SkillDefinition;
+import com.suke.context.UserContext;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,12 +16,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class SkillControllerTest {
 
     @Mock
@@ -29,8 +34,14 @@ class SkillControllerTest {
 
     @BeforeEach
     void setUp() {
+        UserContext.setCurrentId(1L);
         SkillController controller = new SkillController(skillManager);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
+    @AfterEach
+    void tearDown() {
+        UserContext.setCurrentId(null);
     }
 
     @Test

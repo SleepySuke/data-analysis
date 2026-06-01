@@ -28,7 +28,7 @@ public class CheckpointConfig {
             log.info("CheckpointSaver: using RedisSaver");
             return saver;
         } catch (Exception e) {
-            log.error("RedisSaver init failed, falling back to MemorySaver (sessions will be lost on restart): {}", e.getMessage());
+            log.warn("Redis unavailable, falling back to MemorySaver");
             return MemorySaver.builder().build();
         }
     }

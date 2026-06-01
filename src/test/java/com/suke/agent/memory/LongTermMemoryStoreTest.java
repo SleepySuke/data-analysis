@@ -110,12 +110,11 @@ class LongTermMemoryStoreTest {
         profile.setUserId(1L);
         profile.setIndustry("medical");
 
-        when(userProfileMapper.selectOne(any())).thenReturn(null);
-        when(userProfileMapper.insert(any(UserProfile.class))).thenReturn(1);
+        when(userProfileMapper.insertOrUpdate(any(UserProfile.class))).thenReturn(true);
 
         memoryStore.updateProfile(1L, profile);
 
-        verify(userProfileMapper).insert(any(UserProfile.class));
+        verify(userProfileMapper).insertOrUpdate(any(UserProfile.class));
     }
 
     @Test
@@ -125,12 +124,11 @@ class LongTermMemoryStoreTest {
         profile.setId(100L);
         profile.setIndustry("medical");
 
-        when(userProfileMapper.selectOne(any())).thenReturn(profile);
-        when(userProfileMapper.updateById(any(UserProfile.class))).thenReturn(1);
+        when(userProfileMapper.insertOrUpdate(any(UserProfile.class))).thenReturn(true);
 
         memoryStore.updateProfile(1L, profile);
 
-        verify(userProfileMapper).updateById(any(UserProfile.class));
+        verify(userProfileMapper).insertOrUpdate(any(UserProfile.class));
     }
 
     @Test

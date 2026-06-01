@@ -14,6 +14,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.LoaderOptions;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -147,7 +149,7 @@ public class SkillDocumentLoader {
         String yamlContent = trimmed.substring(FRONTMATTER_DELIMITER.length(), end).trim();
         String body = trimmed.substring(end + FRONTMATTER_DELIMITER.length()).trim();
 
-        Yaml yaml = new Yaml();
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         Map<String, Object> frontmatter = yaml.load(yamlContent);
         return new ParsedDocument(frontmatter, body);
     }

@@ -29,6 +29,14 @@ public class WorkingMemory {
         this.redisson = redisson;
     }
 
+    /**
+     * 写入工作记忆。每个 key 独立拥有 30 分钟 TTL，put 时仅刷新当前 key 的过期时间，
+     * 不会续期同一 sessionId 下的其他 key。
+     *
+     * 设计理由：RMapCache 的 entry-level TTL 保证不活跃的 key 自动淘汰，
+     * 避免因单次 put 而让已过期的陈旧数据被意外保留。
+     * 如需会话级整体续期，应由外层（如 AgentSessionManager）统一管理 session 生命周期。
+     */
     public void put(String sessionId, String key, String value) {
         if (sessionId == null || key == null) return;
         try {

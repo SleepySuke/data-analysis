@@ -36,9 +36,16 @@ public class TraceController {
 
     @GetMapping("/{traceId}")
     public Result<AgentTrace> getTrace(@PathVariable String traceId) {
+        Long userId = UserContext.getCurrentId();
+        if (userId == null) {
+            return Result.error("请先登录");
+        }
         AgentTrace trace = traceService.getByTraceId(traceId);
         if (trace == null) {
             return Result.error("Trace不存在: " + traceId);
+        }
+        if (!userId.equals(trace.getUserId())) {
+            return Result.error("无权访问该Trace");
         }
         return Result.success(trace);
     }

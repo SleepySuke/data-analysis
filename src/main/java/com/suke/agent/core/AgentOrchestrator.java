@@ -9,7 +9,7 @@ package com.suke.agent.core;
 
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
-import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.Agent;
 import com.suke.agent.memory.ConversationHistoryManager;
 import com.suke.agent.memory.LongTermMemoryStore;
 import com.suke.agent.memory.TopicExtractor;
@@ -81,7 +81,7 @@ public class AgentOrchestrator {
         int totalTokens = 0;
 
         try {
-            ReactAgent agent = descriptor.getAgent();
+            Agent agent = descriptor.getAgent();
             if (agent == null) {
                 throw new IllegalStateException("Agent instance not found: " + agentName);
             }
