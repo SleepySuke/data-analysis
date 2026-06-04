@@ -10,6 +10,7 @@ import com.suke.agent.memory.mapper.InteractionLogMapper;
 import com.suke.agent.memory.mapper.UserProfileMapper;
 import com.suke.agent.skill.SkillManager;
 import com.suke.agent.skill.mapper.AgentSkillMapper;
+import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.suke.agent.trace.AgentTraceService;
 import com.suke.agent.trace.mapper.AgentTraceMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -121,5 +122,53 @@ class AgentOrchestratorTest {
 
         AgentResponse response = orchestrator.autoRoute("帮我分析数据", 1L, "sess1");
         assertEquals("failed", response.getStatus());
+    }
+
+    @Test
+    void directCallWithNoHandoffReturnsImmediately() throws Exception {
+        com.alibaba.cloud.ai.graph.agent.Agent mockAgent =
+                mock(com.alibaba.cloud.ai.graph.agent.Agent.class);
+        com.alibaba.cloud.ai.graph.NodeOutput mockOutput =
+                mock(com.alibaba.cloud.ai.graph.NodeOutput.class);
+        when(mockAgent.invokeAndGetOutput(anyString(), any())).thenReturn(
+                java.util.Optional.of(mockOutput));
+
+        java.util.Map<String, Object> data = new java.util.HashMap<>();
+        data.put("messages", java.util.List.of(
+                new org.springframework.ai.chat.messages.AssistantMessage("分析完成")));
+        when(mockOutput.state()).thenReturn(
+                new com.alibaba.cloud.ai.graph.OverAllState(data));
+
+        registry.register(AgentDescriptor.builder()
+                .name("test_agent")
+                .prompt("test")
+                .agent(mockAgent)
+                .build());
+
+        AgentResponse response = orchestrator.directCall("test_agent", "hello", 1L, "sess1");
+
+        assertEquals("success", response.getStatus());
+        assertEquals("分析完成", response.getOutput());
+        assertTrue(response.getHandoffs().isEmpty());
+        assertNull(com.suke.agent.core.HandoffContext.getPending());
+    }
+
+    @Test
+    void directCallCleansUpHandoffContextOnError() throws Exception {
+        com.alibaba.cloud.ai.graph.agent.Agent mockAgent =
+                mock(com.alibaba.cloud.ai.graph.agent.Agent.class);
+        when(mockAgent.invokeAndGetOutput(anyString(), any()))
+                .thenThrow(new RuntimeException("agent crashed"));
+
+        registry.register(AgentDescriptor.builder()
+                .name("crash_agent")
+                .prompt("test")
+                .agent(mockAgent)
+                .build());
+
+        AgentResponse response = orchestrator.directCall("crash_agent", "hello", 1L, "sess1");
+
+        assertEquals("failed", response.getStatus());
+        assertNull(com.suke.agent.core.HandoffContext.getPending());
     }
 }

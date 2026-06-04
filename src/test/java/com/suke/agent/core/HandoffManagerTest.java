@@ -25,7 +25,6 @@ class HandoffManagerTest {
         AgentTraceService traceService = new AgentTraceService(traceMapper);
         handoffManager = new HandoffManager(registry, traceService);
 
-        // 注册测试Agent
         registry.register(AgentDescriptor.builder()
                 .name("data_analyst")
                 .prompt("test")
@@ -37,77 +36,119 @@ class HandoffManagerTest {
                 .prompt("test")
                 .handoffs(List.of("data_analyst"))
                 .build());
+
+        registry.register(AgentDescriptor.builder()
+                .name("web_scraper")
+                .prompt("test")
+                .handoffs(List.of("data_analyst"))
+                .build());
     }
 
     @Test
-    void handoffToAllowedAgent() {
-        // data_analyst → data_cleaner 是允许的
-        assertDoesNotThrow(() -> {
-            try {
-                handoffManager.executeHandoff(
-                        "data_analyst", "data_cleaner", "data dirty", "ctx", 1L, "sess1");
-            } catch (UnsupportedOperationException e) {
-                // 预期：executeHandoff 最终会抛 UnsupportedOperationException 因为没有真正的 agent 实例
-                // 但在抛之前应该通过了白名单校验
-                assertTrue(e.getMessage().contains("AgentOrchestrator"));
-            }
-        });
+    void validateAllowsAllowedTarget() {
+        HandoffRequest request = new HandoffRequest("data_analyst", "data_cleaner", "dirty", null);
+        assertDoesNotThrow(() -> handoffManager.validate(Collections.emptyList(), request));
     }
 
     @Test
-    void handoffToDisallowedAgentThrows() {
-        // data_analyst → sql_analyst 不在白名单中
-        assertThrows(IllegalArgumentException.class, () ->
-                handoffManager.executeHandoff(
-                        "data_analyst", "sql_analyst", "reason", "ctx", 1L, "sess1"));
+    void validateRejectsDisallowedTarget() {
+        HandoffRequest badRequest = new HandoffRequest("data_analyst", "sql_analyst", "reason", null);
+        assertThrows(IllegalArgumentException.class,
+                () -> handoffManager.validate(Collections.emptyList(), badRequest));
     }
 
     @Test
-    void cyclicHandoffDetected() {
-        // A→B 的历史记录
+    void validateRejectsCyclicHandoff() {
         List<HandoffRecord> history = new ArrayList<>();
         history.add(HandoffRecord.builder()
-                .fromAgent("data_analyst")
-                .toAgent("data_cleaner")
-                .build());
+                .fromAgent("data_analyst").toAgent("data_cleaner").build());
+        history.add(HandoffRecord.builder()
+                .fromAgent("data_cleaner").toAgent("data_analyst").build());
 
-        // B→A 应被检测为循环
-        assertTrue(handoffManager.isCyclicHandoff(history, "data_cleaner", "data_analyst"));
+        HandoffRequest request = new HandoffRequest("data_analyst", "data_cleaner", "again", null);
+        assertThrows(IllegalStateException.class,
+                () -> handoffManager.validate(history, request));
     }
 
     @Test
-    void noCycleWithFreshHandoff() {
-        List<HandoffRecord> history = new ArrayList<>();
-        assertFalse(handoffManager.isCyclicHandoff(history, "data_analyst", "data_cleaner"));
-    }
-
-    @Test
-    void handoffHistoryTracked() {
-        // 手动模拟handoff记录
+    void validateAllowsFirstRoundTrip() {
+        // history: analyst→cleaner (A→B)
         List<HandoffRecord> history = new ArrayList<>();
         history.add(HandoffRecord.builder()
-                .fromAgent("data_analyst")
-                .toAgent("data_cleaner")
-                .reason("dirty data")
-                .build());
+                .fromAgent("data_analyst").toAgent("data_cleaner").build());
 
-        assertEquals(1, history.size());
-        assertEquals("data_analyst", history.get(0).getFromAgent());
+        // cleaner→analyst (B→A): 首次往返，应允许
+        HandoffRequest request = new HandoffRequest("data_cleaner", "data_analyst", "done", null);
+        assertDoesNotThrow(() -> handoffManager.validate(history, request));
     }
 
     @Test
-    void maxHandoffExceeded() {
-        // 模拟5次handoff
+    void validateRejectsMaxHandoffs() {
         List<HandoffRecord> history = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             history.add(HandoffRecord.builder()
-                    .fromAgent("agent_" + i)
-                    .toAgent("agent_" + (i + 1))
-                    .build());
+                    .fromAgent("data_analyst").toAgent("data_cleaner").build());
+            history.add(HandoffRecord.builder()
+                    .fromAgent("data_cleaner").toAgent("data_analyst").build());
         }
+        // 10 records total, well over MAX_HANDOFFS=5
+        // Use a registered agent as fromAgent so it passes the whitelist check
+        HandoffRequest request = new HandoffRequest("data_analyst", "web_scraper", "overflow", null);
+        assertThrows(IllegalStateException.class,
+                () -> handoffManager.validate(history, request));
+    }
 
-        // 第6次应该超过限制
-        // 直接用内部方法测试
-        assertTrue(history.size() >= 5);
+    @Test
+    void recordCreatesAndStoresHandoffRecord() {
+        HandoffRequest request = new HandoffRequest("data_analyst", "data_cleaner", "dirty", "some context");
+
+        HandoffRecord record = handoffManager.record(request, "sess1");
+
+        assertEquals("data_analyst", record.getFromAgent());
+        assertEquals("data_cleaner", record.getToAgent());
+        assertEquals("dirty", record.getReason());
+        assertEquals("some context", record.getContext());
+        assertTrue(record.getTimestamp() > 0);
+
+        List<HandoffRecord> history = handoffManager.getHandoffHistory("sess1");
+        assertEquals(1, history.size());
+        assertEquals(record, history.get(0));
+    }
+
+    @Test
+    void clearSessionRemovesHistory() {
+        HandoffRequest request = new HandoffRequest("data_analyst", "data_cleaner", "dirty", null);
+        handoffManager.record(request, "sess1");
+
+        handoffManager.clearSession("sess1");
+
+        assertTrue(handoffManager.getHandoffHistory("sess1").isEmpty());
+    }
+
+    @Test
+    void isCyclicHandoffDetectsSecondRoundTrip() {
+        // 首次完整往返: a→b + b→a
+        List<HandoffRecord> history = new ArrayList<>();
+        history.add(HandoffRecord.builder().fromAgent("a").toAgent("b").build());
+        history.add(HandoffRecord.builder().fromAgent("b").toAgent("a").build());
+
+        // 再次 a→b: 第二次往返，应被检测为循环
+        assertTrue(handoffManager.isCyclicHandoff(history, "a", "b"));
+    }
+
+    @Test
+    void isCyclicHandoffAllowsFirstRoundTrip() {
+        // 仅有 a→b
+        List<HandoffRecord> history = new ArrayList<>();
+        history.add(HandoffRecord.builder().fromAgent("a").toAgent("b").build());
+
+        // b→a: 首次往返，应允许
+        assertFalse(handoffManager.isCyclicHandoff(history, "b", "a"));
+    }
+
+    @Test
+    void isCyclicHandoffAllowsFreshPair() {
+        List<HandoffRecord> history = new ArrayList<>();
+        assertFalse(handoffManager.isCyclicHandoff(history, "a", "b"));
     }
 }

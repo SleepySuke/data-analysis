@@ -28,6 +28,7 @@ import com.suke.agent.tool.scraping.UrlFetchTool;
 import com.suke.agent.tool.sql.ResultInterpreterTool;
 import com.suke.agent.tool.sql.SchemaIntrospectTool;
 import com.suke.agent.tool.sql.SqlExecutionTool;
+import com.suke.agent.tool.HandoffTool;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -47,10 +48,11 @@ public class AgentSpecProvider {
             ChartGenerationTool chartGenerationTool,
             StatisticalAnalysisTool statisticalAnalysisTool,
             @Nullable KnowledgeSearchToolAdapter knowledgeSearchToolAdapter,
-            ScriptExecutionTool scriptExecutionTool) {
+            ScriptExecutionTool scriptExecutionTool,
+            HandoffTool handoffTool) {
         List<Object> tools = new ArrayList<>(List.of(
                 csvAnalysisTool, chartGenerationTool,
-                statisticalAnalysisTool, scriptExecutionTool));
+                statisticalAnalysisTool, scriptExecutionTool, handoffTool));
         if (knowledgeSearchToolAdapter != null) {
             tools.add(knowledgeSearchToolAdapter);
         }
@@ -83,12 +85,13 @@ public class AgentSpecProvider {
     public AgentSpec sqlAnalystSpec(
             SchemaIntrospectTool schemaIntrospectTool,
             SqlExecutionTool sqlExecutionTool,
-            ResultInterpreterTool resultInterpreterTool) {
+            ResultInterpreterTool resultInterpreterTool,
+            HandoffTool handoffTool) {
         return AgentSpec.react("sql_analyst",
                 "SQL分析专家：查询数据库，分析结构化数据",
                 AgentPrompts.SQL_ANALYST,
                 List.of("data_analyst"),
-                List.of(schemaIntrospectTool, sqlExecutionTool, resultInterpreterTool),
+                List.of(schemaIntrospectTool, sqlExecutionTool, resultInterpreterTool, handoffTool),
                 new SchemaFirstHook(),
                 ToolCallLimitHook.builder().runLimit(6).build(),
                 ModelCallLimitHook.builder().runLimit(4).build());
@@ -101,13 +104,14 @@ public class AgentSpecProvider {
             OutlierDetectionTool outlierDetectionTool,
             DataTransformTool dataTransformTool,
             DeduplicationTool deduplicationTool,
-            ScriptExecutionTool scriptExecutionTool) {
+            ScriptExecutionTool scriptExecutionTool,
+            HandoffTool handoffTool) {
         return AgentSpec.react("data_cleaner",
                 "数据清洗专家：处理数据质量问题",
                 AgentPrompts.DATA_CLEANER,
                 List.of("data_analyst"),
                 List.of(dataProfilingTool, missingValueTool, outlierDetectionTool,
-                        dataTransformTool, deduplicationTool, scriptExecutionTool),
+                        dataTransformTool, deduplicationTool, scriptExecutionTool, handoffTool),
                 new ProfileFirstHook(),
                 ToolCallLimitHook.builder().runLimit(8).build(),
                 ModelCallLimitHook.builder().runLimit(5).build());

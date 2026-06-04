@@ -64,7 +64,7 @@ public class AgentOrchestrator {
     }
 
     public AgentResponse directCall(String agentName, String message, Long userId, String sessionId) {
-        AgentDescriptor descriptor = agentRegistry.getDescriptor(agentName);
+        agentRegistry.getDescriptor(agentName); // 校验 agent 存在
 
         String traceId = traceService.generateTraceId();
         if (sessionId == null) {
@@ -75,48 +75,75 @@ public class AgentOrchestrator {
         log.info("[Trace:{}] Direct call to agent: {}", traceId, agentName);
 
         List<AgentStep> steps = new ArrayList<>();
-        List<HandoffRecord> handoffs = new ArrayList<>();
+        List<HandoffRecord> allHandoffs = new ArrayList<>();
         String finalOutput = null;
         String status = "success";
         int totalTokens = 0;
+        String currentAgentName = agentName;
 
         try {
-            Agent agent = descriptor.getAgent();
-            if (agent == null) {
-                throw new IllegalStateException("Agent instance not found: " + agentName);
-            }
+            while (true) {
+                HandoffContext.clear();
+                HandoffContext.setCurrentAgent(currentAgentName);
 
-            // Turn-aware enrichment: only inject full context on first turn
-            boolean firstTurn = historyManager.isFirstTurn(sessionId);
-            String enrichedMessage;
-            if (firstTurn) {
-                enrichedMessage = enrichMessage(message, agentName, userId, sessionId, descriptor);
-            } else {
-                // 后续轮次：只注入工作记忆
-                enrichedMessage = prependWorkingMemory(message, sessionId);
-                log.info("[Trace:{}] Continuation turn for session {}, injecting working memory only", traceId, sessionId);
-            }
-
-            java.util.Optional<NodeOutput> outputOpt = agent.invokeAndGetOutput(enrichedMessage,
-                    RunnableConfig.builder().threadId(sessionId).build());
-
-            if (outputOpt.isPresent()) {
-                NodeOutput output = outputOpt.get();
-                finalOutput = extractOutputText(output);
-                Usage usage = output.tokenUsage();
-                if (usage != null && usage.getTotalTokens() != null) {
-                    totalTokens = usage.getTotalTokens();
+                AgentDescriptor currentDescriptor = agentRegistry.getDescriptor(currentAgentName);
+                Agent agent = currentDescriptor.getAgent();
+                if (agent == null) {
+                    throw new IllegalStateException("Agent instance not found: " + currentAgentName);
                 }
-            } else {
-                finalOutput = "";
-            }
 
-            AgentStep step = AgentStep.builder()
-                    .stepIndex(0)
-                    .type("reasoning")
-                    .content("Agent call completed")
-                    .build();
-            steps.add(step);
+                // Turn-aware enrichment: only inject full context on first turn (no prior handoffs)
+                boolean firstTurn = historyManager.isFirstTurn(sessionId);
+                String enrichedMessage;
+                if (firstTurn && allHandoffs.isEmpty()) {
+                    enrichedMessage = enrichMessage(message, currentAgentName, userId, sessionId, currentDescriptor);
+                } else {
+                    enrichedMessage = prependWorkingMemory(message, sessionId);
+                }
+
+                java.util.Optional<NodeOutput> outputOpt = agent.invokeAndGetOutput(enrichedMessage,
+                        RunnableConfig.builder().threadId(sessionId).build());
+
+                String agentOutput = "";
+                if (outputOpt.isPresent()) {
+                    NodeOutput output = outputOpt.get();
+                    agentOutput = extractOutputText(output);
+                    Usage usage = output.tokenUsage();
+                    if (usage != null && usage.getTotalTokens() != null) {
+                        totalTokens += usage.getTotalTokens();
+                    }
+                }
+
+                AgentStep step = AgentStep.builder()
+                        .stepIndex(steps.size())
+                        .type(allHandoffs.isEmpty() ? "reasoning" : "handoff_continue")
+                        .content("Agent " + currentAgentName + " call completed")
+                        .build();
+                steps.add(step);
+
+                // Check for pending handoff
+                HandoffRequest pending = HandoffContext.getPending();
+                if (pending == null) {
+                    finalOutput = agentOutput;
+                    break;
+                }
+
+                // Validate handoff
+                handoffManager.validate(allHandoffs, pending);
+
+                // Record handoff
+                HandoffRecord record = handoffManager.record(pending, sessionId);
+                allHandoffs.add(record);
+
+                log.info("[Trace:{}] Handoff: {} → {} (reason: {})",
+                        traceId, pending.fromAgent(), pending.toAgent(), pending.reason());
+
+                // Prepare next iteration
+                message = String.format(
+                        "[转交自 %s, 原因: %s]\n%s",
+                        pending.fromAgent(), pending.reason(), agentOutput);
+                currentAgentName = pending.toAgent();
+            }
 
         } catch (Exception e) {
             log.error("[Trace:{}] Agent execution failed: {}", traceId, e.getMessage(), e);
@@ -129,13 +156,11 @@ public class AgentOrchestrator {
                     .content(e.getMessage())
                     .build();
             steps.add(errorStep);
+        } finally {
+            HandoffContext.clear();
         }
 
         long durationMs = System.currentTimeMillis() - startTime;
-
-        if (sessionId != null) {
-            handoffs.addAll(handoffManager.getHandoffHistory(sessionId));
-        }
 
         AgentTrace trace = AgentTrace.builder()
                 .traceId(traceId)
@@ -144,7 +169,7 @@ public class AgentOrchestrator {
                 .entryType("direct")
                 .targetAgent(agentName)
                 .steps(steps)
-                .handoffs(handoffs)
+                .handoffs(allHandoffs)
                 .totalTokens(totalTokens)
                 .totalDurationMs((int) durationMs)
                 .finalOutput(finalOutput)
@@ -163,10 +188,11 @@ public class AgentOrchestrator {
         return AgentResponse.builder()
                 .output(finalOutput)
                 .traceId(traceId)
-                .handoffs(handoffs)
+                .handoffs(allHandoffs)
                 .totalTokens(totalTokens)
                 .durationMs(durationMs)
                 .status(status)
+                .sourceAgent(currentAgentName)
                 .build();
     }
 
@@ -198,9 +224,17 @@ public class AgentOrchestrator {
         }
 
         if (descriptor.getHandoffs() != null && !descriptor.getHandoffs().isEmpty()) {
-            enriched.append("[可转交Agent] ");
-            enriched.append(String.join(", ", descriptor.getHandoffs()));
-            enriched.append("\n使用 handoff(agent_name, reason) 进行转交\n\n");
+            enriched.append("[可转交Agent]\n");
+            for (String target : descriptor.getHandoffs()) {
+                enriched.append("- ").append(target);
+                AgentDescriptor targetDesc = agentRegistry.getDescriptor(target);
+                if (targetDesc != null && targetDesc.getDescription() != null) {
+                    enriched.append(": ").append(targetDesc.getDescription());
+                }
+                enriched.append("\n");
+            }
+            enriched.append("当需要其他Agent协作时，调用 handoff(agent_name, reason) 工具进行转交。\n");
+            enriched.append("转交后当前推理会停止，由目标Agent继续处理。\n\n");
         }
 
         enriched.append(message);

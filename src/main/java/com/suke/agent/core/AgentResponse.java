@@ -27,4 +27,5 @@ public class AgentResponse {
     private int totalTokens;
     private long durationMs;
     private String status;
+    private String sourceAgent;
 }
