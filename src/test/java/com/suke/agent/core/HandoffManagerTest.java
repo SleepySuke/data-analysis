@@ -126,24 +126,36 @@ class HandoffManagerTest {
     }
 
     @Test
-    void isCyclicHandoffDetectsSecondRoundTrip() {
-        // 首次完整往返: a→b + b→a
+    void isCyclicHandoffDetectsConsecutiveRoundTrips() {
+        // a→b, b→a, a→b: 连续往返，consecutiveRoundTrips=2
         List<HandoffRecord> history = new ArrayList<>();
         history.add(HandoffRecord.builder().fromAgent("a").toAgent("b").build());
         history.add(HandoffRecord.builder().fromAgent("b").toAgent("a").build());
 
-        // 再次 a→b: 第二次往返，应被检测为循环
+        // a→b: 第二次连续往返
         assertTrue(handoffManager.isCyclicHandoff(history, "a", "b"));
     }
 
     @Test
     void isCyclicHandoffAllowsFirstRoundTrip() {
-        // 仅有 a→b
+        // a→b: 只有一步
         List<HandoffRecord> history = new ArrayList<>();
         history.add(HandoffRecord.builder().fromAgent("a").toAgent("b").build());
 
-        // b→a: 首次往返，应允许
+        // b→a: 首次往返，consecutiveRoundTrips=1，允许
         assertFalse(handoffManager.isCyclicHandoff(history, "b", "a"));
+    }
+
+    @Test
+    void isCyclicHandoffAllowsTriangleFlow() {
+        // 三角流转: a→b, b→c, c→a — 不是循环
+        List<HandoffRecord> history = new ArrayList<>();
+        history.add(HandoffRecord.builder().fromAgent("a").toAgent("b").build());
+        history.add(HandoffRecord.builder().fromAgent("b").toAgent("c").build());
+        history.add(HandoffRecord.builder().fromAgent("c").toAgent("a").build());
+
+        // a→b: 虽然之前出现过 a→b，但不是连续往返，应允许
+        assertFalse(handoffManager.isCyclicHandoff(history, "a", "b"));
     }
 
     @Test

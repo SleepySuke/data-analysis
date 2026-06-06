@@ -1,3 +1,9 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-06-02
+ * @description HandoffTool 白名单校验和 HandoffContext 记录测试
+ */
 package com.suke.agent.tool;
 
 import com.suke.agent.core.AgentDescriptor;

@@ -1,3 +1,9 @@
+/**
+ * @author 自然醒
+ * @version 1.0
+ * @date 2026-06-02
+ * @description HandoffContext ThreadLocal 隔离性测试
+ */
 package com.suke.agent.core;
 
 import org.junit.jupiter.api.AfterEach;

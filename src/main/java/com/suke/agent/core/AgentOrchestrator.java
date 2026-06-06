@@ -80,6 +80,7 @@ public class AgentOrchestrator {
         String status = "success";
         int totalTokens = 0;
         String currentAgentName = agentName;
+        String currentMessage = message;
 
         try {
             while (true) {
@@ -96,9 +97,9 @@ public class AgentOrchestrator {
                 boolean firstTurn = historyManager.isFirstTurn(sessionId);
                 String enrichedMessage;
                 if (firstTurn && allHandoffs.isEmpty()) {
-                    enrichedMessage = enrichMessage(message, currentAgentName, userId, sessionId, currentDescriptor);
+                    enrichedMessage = enrichMessage(currentMessage, currentAgentName, userId, sessionId, currentDescriptor);
                 } else {
-                    enrichedMessage = prependWorkingMemory(message, sessionId);
+                    enrichedMessage = prependWorkingMemory(currentMessage, sessionId);
                 }
 
                 java.util.Optional<NodeOutput> outputOpt = agent.invokeAndGetOutput(enrichedMessage,
@@ -139,7 +140,7 @@ public class AgentOrchestrator {
                         traceId, pending.fromAgent(), pending.toAgent(), pending.reason());
 
                 // Prepare next iteration
-                message = String.format(
+                currentMessage = String.format(
                         "[转交自 %s, 原因: %s]\n%s",
                         pending.fromAgent(), pending.reason(), agentOutput);
                 currentAgentName = pending.toAgent();
@@ -148,7 +149,7 @@ public class AgentOrchestrator {
         } catch (Exception e) {
             log.error("[Trace:{}] Agent execution failed: {}", traceId, e.getMessage(), e);
             status = "failed";
-            finalOutput = "Agent执行失败: " + e.getMessage();
+            finalOutput = "Agent执行失败，请稍后重试";
 
             AgentStep errorStep = AgentStep.builder()
                     .stepIndex(steps.size())

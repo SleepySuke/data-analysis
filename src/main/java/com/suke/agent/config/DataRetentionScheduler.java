@@ -7,6 +7,7 @@
 
 package com.suke.agent.config;
 
+import com.suke.agent.core.HandoffManager;
 import com.suke.agent.memory.mapper.InteractionLogMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Component;
 public class DataRetentionScheduler {
 
     private final InteractionLogMapper interactionLogMapper;
+    private final HandoffManager handoffManager;
 
     @Scheduled(cron = "0 0 3 * * *")
     public void purgeOldInteractionLogs() {
@@ -29,6 +31,15 @@ public class DataRetentionScheduler {
             }
         } catch (Exception e) {
             log.error("Failed to purge old interaction logs", e);
+        }
+    }
+
+    @Scheduled(cron = "0 */10 * * * *")
+    public void evictExpiredHandoffSessions() {
+        try {
+            handoffManager.evictExpiredSessions();
+        } catch (Exception e) {
+            log.error("Failed to evict expired handoff sessions", e);
         }
     }
 }
