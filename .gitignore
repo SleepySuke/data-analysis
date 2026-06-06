@@ -14,7 +14,8 @@
 /lib/
 /dist/
 
-data-analysis/com/
+/com/
+*.class
 
 #claude
 .claude/
