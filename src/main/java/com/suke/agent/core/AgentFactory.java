@@ -24,15 +24,18 @@ public class AgentFactory {
     private final ChatModel chatModel;
     private final BaseCheckpointSaver saver;
     private final Map<String, AgentSpec> specs;
+    private final Map<String, List<ToolCallback>> mcpTools;
 
     public AgentFactory(
             @org.springframework.beans.factory.annotation.Qualifier("qwen") ChatModel chatModel,
             BaseCheckpointSaver saver,
-            List<AgentSpec> specList) {
+            List<AgentSpec> specList,
+            @org.springframework.lang.Nullable Map<String, List<ToolCallback>> mcpTools) {
         this.chatModel = chatModel;
         this.saver = saver;
         this.specs = new LinkedHashMap<>();
         specList.forEach(spec -> this.specs.put(spec.name(), spec));
+        this.mcpTools = mcpTools != null ? mcpTools : Map.of();
     }
 
     public Agent build(String agentName) {
@@ -46,9 +49,9 @@ public class AgentFactory {
     public List<ToolCallback> getTools(String agentName) {
         AgentSpec spec = resolveSpec(agentName);
         if (spec.type() == AgentSpec.AgentType.CUSTOM || spec.toolInstances() == null) {
-            return List.of();
+            return mcpTools.getOrDefault(agentName, List.of());
         }
-        return List.of(ToolCallbacks.from(spec.toolInstances().toArray()));
+        return mergeTools(agentName, List.of(ToolCallbacks.from(spec.toolInstances().toArray())));
     }
 
     public AgentDescriptor buildDescriptor(String agentName) {
@@ -76,12 +79,15 @@ public class AgentFactory {
     }
 
     private Agent buildReactAgent(AgentSpec spec) {
+        List<ToolCallback> allTools = mergeTools(spec.name(),
+                List.of(ToolCallbacks.from(spec.toolInstances().toArray())));
+
         var builder = ReactAgent.builder()
                 .name(spec.name())
                 .description(spec.description())
                 .model(chatModel)
                 .instruction(spec.prompt())
-                .tools(List.of(ToolCallbacks.from(spec.toolInstances().toArray())))
+                .tools(allTools)
                 .saver(saver);
         if (spec.hooks() != null && !spec.hooks().isEmpty()) {
             builder.hooks(spec.hooks().toArray(new Hook[0]));
@@ -96,5 +102,13 @@ public class AgentFactory {
             throw new IllegalStateException(
                     "Failed to build custom agent: " + spec.name(), e);
         }
+    }
+
+    private List<ToolCallback> mergeTools(String agentName, List<ToolCallback> builtIn) {
+        List<ToolCallback> agentMcp = mcpTools.getOrDefault(agentName, List.of());
+        List<ToolCallback> merged = new ArrayList<>(builtIn.size() + agentMcp.size());
+        merged.addAll(builtIn);
+        merged.addAll(agentMcp);
+        return merged;
     }
 }

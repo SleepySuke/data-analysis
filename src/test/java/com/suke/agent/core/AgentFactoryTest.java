@@ -23,22 +23,21 @@ class AgentFactoryTest {
     void setUp() {
         chatModel = mock(ChatModel.class);
         saver = mock(BaseCheckpointSaver.class);
+        factory = new AgentFactory(chatModel, saver, buildSpecs(), null);
+    }
 
+    private List<AgentSpec> buildSpecs() {
         Object dummyTool = new Object() {
             @org.springframework.ai.tool.annotation.Tool(description = "test")
             public String testTool(String input) { return "ok"; }
         };
-
         Agent fakeCustomAgent = mock(Agent.class);
-
-        List<AgentSpec> specs = List.of(
+        return List.of(
                 AgentSpec.react("react_agent", "React Agent", "prompt",
                         List.of("other"), List.of(dummyTool)),
                 AgentSpec.custom("custom_agent", "Custom Agent",
                         List.of(), () -> fakeCustomAgent)
         );
-
-        factory = new AgentFactory(chatModel, saver, specs);
     }
 
     @Test
@@ -104,5 +103,35 @@ class AgentFactoryTest {
     void buildDescriptorForUnknownThrows() {
         assertThrows(IllegalArgumentException.class,
                 () -> factory.buildDescriptor("nonexistent"));
+    }
+
+    @Test
+    void buildReactAgentWithNoMcpToolsWorksAsBefore() {
+        AgentFactory factoryNoMcp = new AgentFactory(chatModel, saver, buildSpecs(), null);
+        Agent agent = factoryNoMcp.build("react_agent");
+        assertNotNull(agent);
+        List<ToolCallback> tools = factoryNoMcp.getTools("react_agent");
+        assertNotNull(tools);
+        assertFalse(tools.isEmpty());
+    }
+
+    @Test
+    void buildReactAgentMergesMcpTools() {
+        ToolCallback mockMcpTool = mock(ToolCallback.class);
+        Map<String, List<ToolCallback>> mcpMap = Map.of("react_agent", List.of(mockMcpTool));
+
+        AgentFactory factoryWithMcp = new AgentFactory(chatModel, saver, buildSpecs(), mcpMap);
+        List<ToolCallback> tools = factoryWithMcp.getTools("react_agent");
+        assertTrue(tools.size() >= 2);
+    }
+
+    @Test
+    void getToolsForCustomWithMcpReturnsMcpTools() {
+        ToolCallback mockMcpTool = mock(ToolCallback.class);
+        Map<String, List<ToolCallback>> mcpMap = Map.of("custom_agent", List.of(mockMcpTool));
+
+        AgentFactory factoryWithMcp = new AgentFactory(chatModel, saver, buildSpecs(), mcpMap);
+        List<ToolCallback> tools = factoryWithMcp.getTools("custom_agent");
+        assertEquals(1, tools.size());
     }
 }
