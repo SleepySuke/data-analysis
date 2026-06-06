@@ -10,6 +10,7 @@ package com.suke.agent.core;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.Agent;
+import com.suke.agent.core.sse.*;
 import com.suke.agent.memory.ConversationHistoryManager;
 import com.suke.agent.memory.LongTermMemoryStore;
 import com.suke.agent.memory.TopicExtractor;
@@ -22,9 +23,12 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Component
@@ -201,6 +205,135 @@ public class AgentOrchestrator {
         String targetAgent = intentRouter.route(message);
         log.info("Auto-route: '{}' → {}", message, targetAgent);
         return directCall(targetAgent, message, userId, sessionId);
+    }
+
+    /**
+     * 流式调用指定Agent，返回SSE事件流。
+     * 支持Agent间Handoff自动转交，最多5级嵌套。
+     * 包含消息增强、token累计、trace持久化、行为追踪、handoff校验。
+     */
+    public Flux<SseEvent> streamingCall(String agentName, String message,
+                                         Long userId, String sessionId) {
+        String traceId = traceService.generateTraceId();
+        String sid = sessionId != null ? sessionId : "sess-" + traceId;
+
+        return Flux.defer(() -> {
+            try {
+                agentRegistry.getDescriptor(agentName);
+            } catch (Exception e) {
+                return Flux.just(new ErrorEvent("Agent执行失败，请稍后重试"));
+            }
+            return startStreaming(agentName, message, userId, sid, traceId);
+        });
+    }
+
+    private Flux<SseEvent> startStreaming(String agentName, String message,
+                                           Long userId, String sessionId, String traceId) {
+        long startTime = System.currentTimeMillis();
+        AtomicInteger totalTokens = new AtomicInteger(0);
+        List<HandoffRecord> allHandoffs = Collections.synchronizedList(new ArrayList<>());
+
+        return streamAgentChain(agentName, message, userId, sessionId, 0, totalTokens, allHandoffs)
+                .concatWith(Flux.defer(() -> {
+                    long duration = System.currentTimeMillis() - startTime;
+
+                    AgentTrace trace = AgentTrace.builder()
+                            .traceId(traceId)
+                            .sessionId(sessionId)
+                            .userId(userId)
+                            .entryType("streaming")
+                            .targetAgent(agentName)
+                            .steps(List.of())
+                            .handoffs(allHandoffs)
+                            .totalTokens(totalTokens.get())
+                            .totalDurationMs((int) duration)
+                            .finalOutput("")
+                            .status("success")
+                            .build();
+                    traceService.saveTraceAsync(trace);
+
+                    if (userId != null) {
+                        String topic = TopicExtractor.extractLabel(message);
+                        behaviorTracker.updateFrequentTopics(userId, topic);
+                        memoryStore.trackInteraction(userId, sessionId, agentName,
+                                "streaming", topic, totalTokens.get(), (int) duration);
+                    }
+
+                    return Flux.just(new DoneEvent(traceId, totalTokens.get(), duration));
+                }))
+                .onErrorResume(e -> {
+                    log.error("[Trace:{}] Streaming failed: {}", traceId, e.getMessage(), e);
+                    return Flux.just(new ErrorEvent("Agent执行失败，请稍后重试"));
+                })
+                .doFinally(signal -> HandoffContext.clear());
+    }
+
+    /**
+     * 递归构建Agent链：流式调用一个Agent，检查Handoff，如有则继续链式调用下一个Agent。
+     * 最多支持5级Handoff嵌套。包含HandoffManager校验（白名单+循环检测）。
+     */
+    private Flux<SseEvent> streamAgentChain(String agentName, String message,
+                                             Long userId, String sessionId, int depth,
+                                             AtomicInteger totalTokens, List<HandoffRecord> allHandoffs) {
+        if (depth > 5) {
+            return Flux.empty();
+        }
+
+        return streamSingleAgent(agentName, message, userId, sessionId, depth == 0, totalTokens)
+                .concatWith(Flux.defer(() -> {
+                    HandoffRequest pending = HandoffContext.getPending();
+                    if (pending != null) {
+                        try {
+                            handoffManager.validate(allHandoffs, pending);
+                            HandoffRecord record = handoffManager.record(pending, sessionId);
+                            allHandoffs.add(record);
+                        } catch (Exception e) {
+                            log.warn("[Stream] Handoff validation failed: {}", e.getMessage());
+                            return Flux.empty();
+                        }
+
+                        String nextMsg = String.format("[转交自 %s, 原因: %s]",
+                                pending.fromAgent(), pending.reason());
+                        return Flux.just(
+                                (SseEvent) new HandoffEvent(pending.fromAgent(), pending.toAgent(), pending.reason())
+                        ).concatWith(streamAgentChain(pending.toAgent(), nextMsg, userId, sessionId,
+                                depth + 1, totalTokens, allHandoffs));
+                    }
+                    return Flux.empty();
+                }));
+    }
+
+    private Flux<SseEvent> streamSingleAgent(String agentName, String message,
+                                              Long userId, String sessionId,
+                                              boolean enrich, AtomicInteger totalTokens) {
+        HandoffContext.clear();
+        HandoffContext.setCurrentAgent(agentName);
+
+        AgentDescriptor desc = agentRegistry.getDescriptor(agentName);
+        Agent agent = desc.getAgent();
+        if (agent == null) {
+            return Flux.just(new ErrorEvent("Agent执行失败，请稍后重试"));
+        }
+
+        String enrichedMessage;
+        if (enrich && historyManager.isFirstTurn(sessionId)) {
+            enrichedMessage = enrichMessage(message, agentName, userId, sessionId, desc);
+        } else {
+            enrichedMessage = prependWorkingMemory(message, sessionId);
+        }
+
+        try {
+            return agent.stream(enrichedMessage, RunnableConfig.builder().threadId(sessionId).build())
+                    .doOnNext(output -> {
+                        Usage usage = output.tokenUsage();
+                        if (usage != null && usage.getTotalTokens() != null) {
+                            totalTokens.addAndGet(usage.getTotalTokens());
+                        }
+                    })
+                    .concatMap(new SseEventConverter()::convert);
+        } catch (com.alibaba.cloud.ai.graph.exception.GraphRunnerException e) {
+            return Flux.just(new ErrorEvent("Agent执行失败，请稍后重试"));
+        }
     }
 
     String enrichMessage(String message, String agentName, Long userId, String sessionId, AgentDescriptor descriptor) {

@@ -7,8 +7,8 @@
 
 package com.suke.agent.controller;
 
-import com.alibaba.fastjson2.JSON;
 import com.suke.agent.core.*;
+import com.suke.agent.core.sse.*;
 import com.suke.agent.domain.dto.AgentChatDTO;
 import com.suke.agent.domain.vo.*;
 import com.suke.common.Result;
@@ -20,10 +20,9 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.Disposable;
 
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -35,17 +34,16 @@ public class AgentController {
     private final AgentRegistry agentRegistry;
     private final AgentSessionManager sessionManager;
     private final RedisUtils redisUtils;
-    private final ExecutorService sseExecutor = new ThreadPoolExecutor(
-            4, 32, 60L, TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(100),
-            new ThreadPoolExecutor.CallerRunsPolicy());
+    private final IntentRouter intentRouter;
 
     public AgentController(AgentOrchestrator orchestrator, AgentRegistry agentRegistry,
-                           AgentSessionManager sessionManager, RedisUtils redisUtils) {
+                           AgentSessionManager sessionManager, RedisUtils redisUtils,
+                           IntentRouter intentRouter) {
         this.orchestrator = orchestrator;
         this.agentRegistry = agentRegistry;
         this.sessionManager = sessionManager;
         this.redisUtils = redisUtils;
+        this.intentRouter = intentRouter;
     }
 
     // ========== Session 管理 ==========
@@ -77,57 +75,64 @@ public class AgentController {
 
         SseEmitter emitter = new SseEmitter(180_000L);
 
-        sseExecutor.execute(() -> {
-            try {
-                Long userId = UserContext.getCurrentId();
-                redisUtils.doRateLimit("agent:rate:" + userId);
+        try {
+            Long userId = UserContext.getCurrentId();
+            redisUtils.doRateLimit("agent:rate:" + userId);
 
-                String enrichedMessage = enrichWithFiles(message, files);
-                log.info("SSE流式对话开始处理, userId: {}", userId);
+            String enrichedMessage = enrichWithFiles(message, files);
+            String targetAgent = intentRouter.route(enrichedMessage);
 
-                AgentResponse response = orchestrator.autoRoute(
-                        enrichedMessage, userId, sessionId);
-                log.info("SSE流式对话Agent执行完成, traceId: {}", response.getTraceId());
+            log.info("SSE流式对话路由到: {}, userId: {}", targetAgent, userId);
 
-                ArtifactAdapter.ParseResult parsed =
-                        ArtifactAdapter.parse(response.getOutput(), "data_analyst");
+            Disposable subscription = orchestrator
+                    .streamingCall(targetAgent, enrichedMessage, userId, sessionId)
+                    .filter(event -> !(event instanceof AgentStreamEndEvent))
+                    .subscribe(
+                            event -> {
+                                try {
+                                    emitter.send(SseEmitter.event()
+                                            .name(event.type())
+                                            .data(event, MediaType.APPLICATION_JSON));
+                                } catch (Exception e) {
+                                    log.warn("SSE发送失败，客户端可能已断开: {}", e.getMessage());
+                                    try { emitter.complete(); } catch (Exception ignored) {}
+                                }
+                            },
+                            error -> {
+                                log.error("SSE流异常: {}", error.getMessage());
+                                try {
+                                    emitter.send(SseEmitter.event()
+                                            .name("error")
+                                            .data(new ErrorEvent("连接异常"), MediaType.APPLICATION_JSON));
+                                } catch (Exception ignored) {}
+                                emitter.complete();
+                            },
+                            () -> {
+                                log.info("SSE流式对话完成, sessionId: {}", sessionId);
+                                emitter.complete();
+                            }
+                    );
 
-                // 流式发送 token
-                String content = parsed.content();
-                log.info("SSE开始发送token, content length: {}", content.length());
-                int chunkSize = 3;
-                for (int i = 0; i < content.length(); i += chunkSize) {
-                    String chunk = content.substring(i,
-                            Math.min(i + chunkSize, content.length()));
-                    emitter.send(SseEmitter.event()
-                            .name("token")
-                            .data(Map.of("content", chunk), MediaType.APPLICATION_JSON));
-                    Thread.sleep(20);
-                }
-
-                // 发送 artifact
-                log.info("SSE开始发送artifacts, count: {}", parsed.artifacts().size());
-                for (ArtifactVO artifact : parsed.artifacts()) {
-                    emitter.send(SseEmitter.event()
-                            .name("artifact")
-                            .data(artifact, MediaType.APPLICATION_JSON));
-                    Thread.sleep(50);
-                }
-
-                emitter.send(SseEmitter.event().name("done").data("{}"));
-                log.info("SSE流式对话完成, sessionId: {}", sessionId);
+            emitter.onCompletion(subscription::dispose);
+            emitter.onTimeout(() -> {
+                log.warn("SSE连接超时, sessionId: {}", sessionId);
+                subscription.dispose();
                 emitter.complete();
+            });
+            emitter.onError(e -> {
+                log.warn("SSE连接错误: {}", e.getMessage());
+                subscription.dispose();
+            });
 
-            } catch (Exception e) {
-                log.error("SSE流式对话失败: {}", e.getMessage(), e);
-                try {
-                    emitter.send(SseEmitter.event()
-                            .name("error")
-                            .data(e.getMessage() != null ? e.getMessage() : "未知错误"));
-                    emitter.complete();
-                } catch (Exception ignored) {}
-            }
-        });
+        } catch (Exception e) {
+            log.error("SSE流式对话初始化失败: {}", e.getMessage(), e);
+            try {
+                emitter.send(SseEmitter.event()
+                        .name("error")
+                        .data(new ErrorEvent("初始化失败"), MediaType.APPLICATION_JSON));
+            } catch (Exception ignored) {}
+            emitter.complete();
+        }
 
         return emitter;
     }
@@ -157,7 +162,7 @@ public class AgentController {
             return Result.success(toVO(response));
         } catch (Exception e) {
             log.error("Agent调用失败: {}", e.getMessage(), e);
-            return Result.error("Agent执行失败: " + e.getMessage());
+            return Result.error("Agent执行失败");
         }
     }
 
@@ -178,7 +183,7 @@ public class AgentController {
             return Result.success(toVO(response));
         } catch (Exception e) {
             log.error("Agent路由失败: {}", e.getMessage(), e);
-            return Result.error("Agent执行失败: " + e.getMessage());
+            return Result.error("Agent执行失败");
         }
     }
 
