@@ -17,6 +17,8 @@
 /com/
 *.class
 
+.understand-anything/
+
 #claude
 .claude/
 .claude.json

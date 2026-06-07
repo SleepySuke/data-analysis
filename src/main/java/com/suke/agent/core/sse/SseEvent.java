@@ -8,6 +8,7 @@ package com.suke.agent.core.sse;
 
 public sealed interface SseEvent permits
         TokenEvent, ToolCallEvent, ToolResultEvent,
-        HandoffEvent, DoneEvent, ErrorEvent, AgentStreamEndEvent {
+        HandoffEvent, DoneEvent, ErrorEvent, AgentStreamEndEvent,
+        PlanEvent, StepStartEvent, StepResultEvent, StepRetryEvent, ReplanEvent {
     String type();
 }

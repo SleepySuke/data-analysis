@@ -54,7 +54,7 @@ class AgentControllerStreamingTest {
     void setUp() {
         UserContext.setCurrentId(1L);
         AgentController controller = new AgentController(
-                orchestrator, agentRegistry, sessionManager, redisUtils, intentRouter);
+                orchestrator, null, agentRegistry, sessionManager, redisUtils, intentRouter);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

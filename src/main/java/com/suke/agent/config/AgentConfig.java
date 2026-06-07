@@ -12,7 +12,12 @@ import com.suke.agent.core.AgentFactory;
 import com.suke.agent.core.AgentRegistry;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Configuration
@@ -39,5 +44,17 @@ public class AgentConfig {
             }
         }
         log.info("Agent Registry initialized with {} agents", agentRegistry.allAgentNames().size());
+    }
+
+    @Bean
+    @Qualifier("planExecutor")
+    public ExecutorService planExecutor() {
+        return Executors.newFixedThreadPool(
+                Runtime.getRuntime().availableProcessors(),
+                r -> {
+                    Thread t = new Thread(r, "plan-executor");
+                    t.setDaemon(true);
+                    return t;
+                });
     }
 }

@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Component
-public class AgentOrchestrator {
+public class AgentOrchestrator implements AgentChatService {
 
     private final AgentRegistry agentRegistry;
     private final AgentTraceService traceService;

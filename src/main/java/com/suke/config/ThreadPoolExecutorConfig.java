@@ -5,10 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 /**
  * @author 自然醒
@@ -49,6 +46,7 @@ public class ThreadPoolExecutorConfig {
         );
         return threadPoolExecutor;
     }
+
 
     @Bean("taskExecutor")
     public ThreadPoolTaskExecutor asyncTaskExecutor() {

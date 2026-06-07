@@ -31,15 +31,17 @@ import java.util.stream.Collectors;
 public class AgentController {
 
     private final AgentOrchestrator orchestrator;
+    private final AgentRoutingFacade routingFacade;
     private final AgentRegistry agentRegistry;
     private final AgentSessionManager sessionManager;
     private final RedisUtils redisUtils;
     private final IntentRouter intentRouter;
 
-    public AgentController(AgentOrchestrator orchestrator, AgentRegistry agentRegistry,
-                           AgentSessionManager sessionManager, RedisUtils redisUtils,
-                           IntentRouter intentRouter) {
+    public AgentController(AgentOrchestrator orchestrator, AgentRoutingFacade routingFacade,
+                           AgentRegistry agentRegistry, AgentSessionManager sessionManager,
+                           RedisUtils redisUtils, IntentRouter intentRouter) {
         this.orchestrator = orchestrator;
+        this.routingFacade = routingFacade;
         this.agentRegistry = agentRegistry;
         this.sessionManager = sessionManager;
         this.redisUtils = redisUtils;
@@ -126,6 +128,87 @@ public class AgentController {
 
         } catch (Exception e) {
             log.error("SSE流式对话初始化失败: {}", e.getMessage(), e);
+            try {
+                emitter.send(SseEmitter.event()
+                        .name("error")
+                        .data(new ErrorEvent("初始化失败"), MediaType.APPLICATION_JSON));
+            } catch (Exception ignored) {}
+            emitter.complete();
+        }
+
+        return emitter;
+    }
+
+    // ========== Plan-Execute SSE 流式端点（复杂多步骤意图） ==========
+
+    @PostMapping(value = "/chat/plan-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter planStream(
+            @RequestParam String sessionId,
+            @RequestParam String message,
+            @RequestParam(required = false) MultipartFile[] files) {
+
+        log.info("Plan-Execute SSE, sessionId: {}, message length: {}",
+                sessionId, message != null ? message.length() : 0);
+
+        if (message == null || message.isBlank()) {
+            SseEmitter emitter = new SseEmitter();
+            try {
+                emitter.send(SseEmitter.event().name("error").data(new ErrorEvent("消息不能为空"), MediaType.APPLICATION_JSON));
+            } catch (Exception ignored) {}
+            emitter.complete();
+            return emitter;
+        }
+
+        SseEmitter emitter = new SseEmitter(300_000L); // 5分钟超时（复杂任务需要更长时间）
+
+        try {
+            Long userId = UserContext.getCurrentId();
+            redisUtils.doRateLimit("agent:rate:" + userId);
+
+            String enrichedMessage = enrichWithFiles(message, files);
+
+            Disposable subscription = routingFacade
+                    .streamingRouteWithPlan(enrichedMessage, userId, sessionId)
+                    .filter(event -> !(event instanceof AgentStreamEndEvent))
+                    .subscribe(
+                            event -> {
+                                try {
+                                    emitter.send(SseEmitter.event()
+                                            .name(event.type())
+                                            .data(event, MediaType.APPLICATION_JSON));
+                                } catch (Exception e) {
+                                    log.warn("Plan SSE发送失败: {}", e.getMessage());
+                                    try { emitter.complete(); } catch (Exception ignored) {}
+                                }
+                            },
+                            error -> {
+                                log.error("Plan SSE流异常: {}", error.getMessage());
+                                try {
+                                    emitter.send(SseEmitter.event()
+                                            .name("error")
+                                            .data(new ErrorEvent("执行失败"), MediaType.APPLICATION_JSON));
+                                } catch (Exception ignored) {}
+                                emitter.complete();
+                            },
+                            () -> {
+                                log.info("Plan-Execute SSE完成, sessionId: {}", sessionId);
+                                emitter.complete();
+                            }
+                    );
+
+            emitter.onCompletion(subscription::dispose);
+            emitter.onTimeout(() -> {
+                log.warn("Plan SSE连接超时, sessionId: {}", sessionId);
+                subscription.dispose();
+                emitter.complete();
+            });
+            emitter.onError(e -> {
+                log.warn("Plan SSE连接错误: {}", e.getMessage());
+                subscription.dispose();
+            });
+
+        } catch (Exception e) {
+            log.error("Plan-Execute SSE初始化失败: {}", e.getMessage(), e);
             try {
                 emitter.send(SseEmitter.event()
                         .name("error")

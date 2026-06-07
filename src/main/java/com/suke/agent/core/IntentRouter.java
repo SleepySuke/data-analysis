@@ -76,4 +76,32 @@ public class IntentRouter {
         }
         return "data_analyst";
     }
+
+    /**
+     * 路由并判断意图复杂度。
+     * 复杂特征：涉及 2+ Agent、多步骤（"先...然后...再..."）、复合分析
+     */
+    public IntentResult routeWithComplexity(String message) {
+        String agent = route(message);
+
+        boolean complex = isComplexByRules(message);
+        String reason = complex ? "多步骤或复合意图" : "单步意图";
+
+        return new IntentResult(agent, complex, reason);
+    }
+
+    private boolean isComplexByRules(String message) {
+        if (message.contains("然后") || message.contains("接着") || message.contains("再")
+                || message.contains("之后") || (message.contains("先") && message.contains("最后"))) {
+            return true;
+        }
+        int agentKeywordCount = 0;
+        String[] agentKeywords = {"清洗", "分析", "图表", "sql", "数据库", "抓取", "爬取"};
+        for (String kw : agentKeywords) {
+            if (message.toLowerCase().contains(kw)) agentKeywordCount++;
+        }
+        return agentKeywordCount >= 2;
+    }
+
+    public record IntentResult(String agentName, boolean complex, String reason) {}
 }

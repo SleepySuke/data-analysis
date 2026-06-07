@@ -1,0 +1,100 @@
+{
+  "planStatusTransitions": {
+    "description": "验证计划状态转换：RUNNING → advanceStep → COMPLETED",
+    "initialStatus": "RUNNING",
+    "steps": [
+      {"stepIndex": 0, "agentName": "data_analyst", "input": "analyze", "expectedOutput": "result"}
+    ],
+    "expectedStatusAfterAdvance": "RUNNING",
+    "expectedHasMoreSteps": false,
+    "expectedStatusAfterComplete": "COMPLETED",
+    "expectedStepStatusAfterComplete": "PASS"
+  },
+  "planFailureFlow": {
+    "description": "验证计划失败：RUNNING → markFailed → FAILED",
+    "initialStatus": "RUNNING",
+    "failureReason": "timeout",
+    "expectedStatus": "FAILED",
+    "expectedStepStatus": "PENDING"
+  },
+  "retryExhaustion": {
+    "description": "验证重试耗尽：3次重试后 retryCount=3，status=RETRY",
+    "maxRetryCount": 3,
+    "expectedRetryCounts": [1, 2, 3],
+    "expectedStatusAfterEachRetry": "RETRY"
+  },
+  "replanCountLimit": {
+    "description": "验证重规划计数：incrementReplanCount 正确递增，最大值=2",
+    "expectedCounts": [0, 1, 2]
+  },
+  "intentResultSimpleVsComplex": {
+    "description": "验证 IntentResult 区分简单/复杂意图",
+    "simple": {
+      "agentName": "data_analyst",
+      "complex": false,
+      "reason": "单步意图"
+    },
+    "complex": {
+      "agentName": "data_analyst",
+      "complex": true,
+      "reason": "多步骤或复合意图"
+    }
+  },
+  "sseEventTypes": {
+    "description": "验证所有新增 SSE 事件的 type() 返回值",
+    "planEvent": {
+      "type": "plan_created",
+      "planId": "p1",
+      "summary": "summary"
+    },
+    "stepStartEvent": {
+      "type": "step_start",
+      "stepIndex": 0,
+      "agent": "data_analyst"
+    },
+    "stepResultEvent": {
+      "type": "step_result",
+      "stepIndex": 0,
+      "status": "pass",
+      "durationMs": 1500
+    },
+    "stepRetryEvent": {
+      "type": "step_retry",
+      "stepIndex": 0,
+      "retryCount": 1
+    },
+    "replanEvent": {
+      "type": "replan",
+      "reason": "需要调整"
+    }
+  },
+  "planValidation": {
+    "description": "验证 PlanExecutor.validatePlan 的合法/非法校验",
+    "validPlan": {
+      "steps": [{"stepIndex": 0, "agentName": "data_analyst", "input": "test", "expectedOutput": "out"}],
+      "expected": "PASS"
+    },
+    "emptyPlan": {
+      "steps": [],
+      "expectedException": "IllegalArgumentException"
+    },
+    "tooManySteps": {
+      "stepCount": 11,
+      "expectedException": "IllegalArgumentException"
+    }
+  },
+  "insertStepsAndReindex": {
+    "description": "验证 insertSteps 正确插入并重新索引",
+    "originalSteps": [
+      {"agentName": "data_analyst"},
+      {"agentName": "data_analyst"}
+    ],
+    "insertAtIndex": 1,
+    "newSteps": [
+      {"agentName": "data_cleaner"},
+      {"agentName": "sql_analyst"}
+    ],
+    "expectedTotalSteps": 4,
+    "expectedOrder": ["data_analyst", "data_cleaner", "sql_analyst", "data_analyst"]
+  }
+}
