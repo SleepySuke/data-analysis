@@ -1,0 +1,208 @@
+{
+  "fixture1_directCall": {
+    "description": "Direct call to data_analyst agent, verify response and trace",
+    "response": {
+      "status": "success",
+      "sourceAgent": "data_analyst",
+      "outputContains": ["销售趋势"]
+    },
+    "trace": {
+      "entryType": "direct",
+      "targetAgent": "data_analyst",
+      "status": "success",
+      "handoffCount": 0
+    }
+  },
+
+  "fixture2_streamingCall": {
+    "description": "Streaming call to data_analyst agent, verify SSE event sequence",
+    "expectedEventTypes": ["token", "agent_stream_end", "done"],
+    "trace": {
+      "entryType": "streaming"
+    }
+  },
+
+  "fixture3_streamingHandoff": {
+    "description": "Streaming call with handoff from data_analyst to data_cleaner",
+    "expectedEventTypes": ["token", "handoff", "token", "agent_stream_end", "done"],
+    "handoffs": [
+      {
+        "from": "data_analyst",
+        "to": "data_cleaner",
+        "reasonContains": "发现缺失值"
+      }
+    ]
+  },
+
+  "fixture4_streamingError": {
+    "description": "Streaming call to non-existent agent returns error event",
+    "expectedEventTypes": ["error"]
+  },
+
+  "fixture7_planExecute": {
+    "description": "3-step plan execution: cleaner, analyst, analyst - all PASS",
+    "expectedEventTypes": [
+      "plan_created", "step_start", "token", "step_result",
+      "step_start", "token", "step_result",
+      "step_start", "token", "step_result",
+      "done"
+    ],
+    "planStatus": "COMPLETED",
+    "stepCount": 3,
+    "plan": {
+      "planSummary": "数据清洗分析流程",
+      "steps": [
+        {
+          "stepIndex": 0,
+          "mode": "SEQUENTIAL",
+          "agentName": "data_cleaner",
+          "input": "清洗数据"
+        },
+        {
+          "stepIndex": 1,
+          "mode": "SEQUENTIAL",
+          "agentName": "data_analyst",
+          "input": "分析销售趋势"
+        },
+        {
+          "stepIndex": 2,
+          "mode": "SEQUENTIAL",
+          "agentName": "data_analyst",
+          "input": "生成分析报告"
+        }
+      ]
+    }
+  },
+
+  "fixture8_stepRetry": {
+    "description": "1-step plan with RETRY eval then PASS on second attempt",
+    "expectedEventTypes": [
+      "plan_created", "step_start", "token", "step_retry",
+      "step_start", "token", "step_result",
+      "done"
+    ],
+    "planStatus": "COMPLETED",
+    "stepCount": 1,
+    "retryCount": 1
+  },
+
+  "fixture9_replan": {
+    "description": "2-step plan, first step eval=REPLAN, replan creates new 1-step plan with PASS",
+    "expectedEventTypes": [
+      "plan_created", "step_start", "token", "step_result",
+      "replan",
+      "step_start", "token", "step_result",
+      "done"
+    ],
+    "planStatus": "COMPLETED"
+  },
+
+  "fixture10_maxIterations": {
+    "description": "1-step plan with all evals=RETRY until max iterations exceeded",
+    "planStatus": "FAILED",
+    "failureContains": ["迭代"]
+  },
+
+  "fixture11_sequentialPipeline": {
+    "description": "2-step sequential pipeline: cleaner then analyst, both PASS",
+    "stepCount": 2,
+    "planStatus": "COMPLETED",
+    "steps": [
+      {
+        "stepIndex": 0,
+        "mode": "SEQUENTIAL",
+        "agentName": "data_cleaner",
+        "evalResult": "PASS"
+      },
+      {
+        "stepIndex": 1,
+        "mode": "SEQUENTIAL",
+        "agentName": "data_analyst",
+        "evalResult": "PASS"
+      }
+    ],
+    "stepOutputs": ["清洗完成", "分析报告完成"]
+  },
+
+  "fixture12_parallelPipeline": {
+    "description": "2-step plan with parallel [web_scraper, sql_analyst] then analyst, both PASS",
+    "stepCount": 2,
+    "planStatus": "COMPLETED",
+    "steps": [
+      {
+        "stepIndex": 0,
+        "mode": "PARALLEL",
+        "agentNames": ["web_scraper", "sql_analyst"],
+        "evalResult": "PASS",
+        "agentOutputs": {
+          "web_scraper": { "status": "success" },
+          "sql_analyst": { "status": "success" }
+        }
+      },
+      {
+        "stepIndex": 1,
+        "mode": "SEQUENTIAL",
+        "agentName": "data_analyst",
+        "evalResult": "PASS"
+      }
+    ]
+  },
+
+  "fixture13_parallelPartialFailure": {
+    "description": "Parallel step with web_scraper=success + sql_analyst=failed, eval still PASS",
+    "stepCount": 2,
+    "planStatus": "COMPLETED",
+    "partialFailure": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "mode": "PARALLEL",
+        "agentNames": ["web_scraper", "sql_analyst"],
+        "evalResult": "PASS",
+        "agentOutputs": {
+          "web_scraper": { "status": "success" },
+          "sql_analyst": { "status": "failed" }
+        }
+      },
+      {
+        "stepIndex": 1,
+        "mode": "SEQUENTIAL",
+        "agentName": "data_analyst",
+        "evalResult": "PASS"
+      }
+    ]
+  },
+
+  "fixture14_fullChain": {
+    "description": "Full chain through AgentRoutingFacade with complex intent: parallel step then sequential steps",
+    "expectedEventTypes": [
+      "plan_created",
+      "step_start", "token", "step_result",
+      "step_start", "token", "step_result",
+      "step_start", "token", "step_result",
+      "done"
+    ],
+    "planStatus": "COMPLETED",
+    "stepCount": 3,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "mode": "PARALLEL",
+        "agentNames": ["web_scraper", "sql_analyst"],
+        "evalResult": "PASS"
+      },
+      {
+        "stepIndex": 1,
+        "mode": "SEQUENTIAL",
+        "agentName": "data_cleaner",
+        "evalResult": "PASS"
+      },
+      {
+        "stepIndex": 2,
+        "mode": "SEQUENTIAL",
+        "agentName": "data_analyst",
+        "evalResult": "PASS"
+      }
+    ]
+  }
+}
