@@ -6,11 +6,15 @@
  */
 package com.suke.agent.domain.entity;
 
+import com.suke.agent.core.models.StepMode;
 import com.suke.agent.core.models.StepStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -18,10 +22,14 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class PlanStep {
     private int stepIndex;
+    @Builder.Default
+    private StepMode mode = StepMode.SEQUENTIAL;
     private String agentName;
+    private List<String> agentNames;
     private String input;
     private String expectedOutput;
     private String actualOutput;
+    private Map<String, String> outputs;
     @Builder.Default
     private StepStatus status = StepStatus.PENDING;
     @Builder.Default
@@ -32,5 +40,9 @@ public class PlanStep {
     public void incrementRetryCount() {
         this.retryCount++;
         this.status = StepStatus.RETRY;
+    }
+
+    public boolean isParallel() {
+        return mode == StepMode.PARALLEL;
     }
 }

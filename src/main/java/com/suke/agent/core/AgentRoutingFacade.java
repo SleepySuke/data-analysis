@@ -8,6 +8,7 @@ package com.suke.agent.core;
 
 import com.suke.agent.core.sse.SseEvent;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -19,7 +20,7 @@ public class AgentRoutingFacade {
     private final PlanExecutor planExecutor;
     private final IntentRouter intentRouter;
 
-    public AgentRoutingFacade(AgentChatService chatService,
+    public AgentRoutingFacade(@Qualifier("agentChatService")AgentChatService chatService,
                               PlanExecutor planExecutor,
                               IntentRouter intentRouter) {
         this.chatService = chatService;

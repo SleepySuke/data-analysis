@@ -281,8 +281,9 @@ class PlanExecuteIntegrationTest {
 
             // Create PlanExecutor with mock AgentChatService and null ChatClient
             Constructor<PlanExecutor> ctor = PlanExecutor.class.getDeclaredConstructor(
-                    AgentChatService.class, AgentRegistry.class, org.springframework.ai.chat.client.ChatClient.class, java.util.concurrent.Executor.class);
-            return ctor.newInstance(mockOrch, null, null, null);
+                    AgentChatService.class, AgentRegistry.class, org.springframework.ai.chat.client.ChatClient.class, java.util.concurrent.Executor.class,
+                    PipelineExecutor.class);
+            return ctor.newInstance(mockOrch, null, null, null, null);
         } catch (Exception e) {
             throw new RuntimeException("Failed to create PlanExecutor via reflection", e);
         }

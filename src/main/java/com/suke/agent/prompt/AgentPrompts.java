@@ -137,12 +137,24 @@ public final class AgentPrompts {
             3. sql_analyst - SQL分析：查询数据库，分析结构化数据
             4. data_cleaner - 数据清洗：处理数据质量问题
 
+            步骤执行模式：
+            - 串行模式（默认）：指定 agentName 字段，单步单 agent 按序执行
+            - 并行模式：指定 mode 为 "parallel"，使用 agents 数组列出多个 agent 并行执行
+              并行步骤适用于多个独立数据源需要同时获取的场景
+
             请以JSON格式输出执行计划，不要包含任何其他内容：
             {
               "planSummary": "计划摘要",
               "steps": [
                 {
                   "agentName": "agent名称",
+                  "mode": "sequential",
+                  "input": "步骤输入描述",
+                  "expectedOutput": "预期输出描述"
+                },
+                {
+                  "agents": ["agent1", "agent2"],
+                  "mode": "parallel",
                   "input": "步骤输入描述",
                   "expectedOutput": "预期输出描述"
                 }
@@ -154,6 +166,8 @@ public final class AgentPrompts {
             - 每个步骤必须指定一个存在的Agent
             - 步骤之间有明确的依赖关系
             - input 描述要清晰，包含足够的上下文
+            - 并行步骤的 agents 数组中每个 agent 必须独立，不依赖其他并行 agent 的输出
+            - 并行步骤最多同时执行4个 agent
             """;
 
     public static final String STEP_EVALUATOR = """

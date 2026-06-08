@@ -11,6 +11,8 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.suke.agent.core.models.EvalResult;
 import com.suke.agent.core.models.PlanStatus;
+import com.suke.agent.core.models.StepMode;
+import com.suke.agent.core.models.StepResult;
 import com.suke.agent.core.models.StepStatus;
 import com.suke.agent.core.sse.*;
 import com.suke.agent.domain.entity.ExecutionPlan;
@@ -23,7 +25,9 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -47,15 +51,18 @@ public class PlanExecutor {
     private final AgentRegistry agentRegistry;
     private final ChatClient deepseekClient;
     private final Executor executor;
+    private final PipelineExecutor pipelineExecutor;
 
     public PlanExecutor(@Qualifier("agentChatService")AgentChatService chatService,
                         AgentRegistry agentRegistry,
                         @Qualifier("deepseekClient") ChatClient deepseekClient,
-                         @Qualifier("planExecutor") Executor executor) {
+                         @Qualifier("planExecutor") Executor executor,
+                        PipelineExecutor pipelineExecutor) {
         this.chatService = chatService;
         this.agentRegistry = agentRegistry;
         this.deepseekClient = deepseekClient;
         this.executor = executor;
+        this.pipelineExecutor = pipelineExecutor;
     }
 
     public void validatePlan(ExecutionPlan plan) {
@@ -67,11 +74,24 @@ public class PlanExecutor {
             throw new IllegalArgumentException("计划步骤数不能超过 " + MAX_STEPS);
         }
         for (PlanStep step : plan.getSteps()) {
-            if (step.getAgentName() == null || step.getAgentName().isBlank()) {
-                throw new IllegalArgumentException("步骤 " + step.getStepIndex() + " 的 Agent 名称为空");
-            }
-            if (agentRegistry != null && !agentRegistry.exists(step.getAgentName())) {
-                throw new IllegalArgumentException("步骤 " + step.getStepIndex() + " 的 Agent 不存在: " + step.getAgentName());
+            if (step.isParallel()) {
+                if (step.getAgentNames() == null || step.getAgentNames().isEmpty()) {
+                    throw new IllegalArgumentException("并行步骤 " + step.getStepIndex() + " 缺少 agentNames");
+                }
+                if (agentRegistry != null) {
+                    for (String name : step.getAgentNames()) {
+                        if (!agentRegistry.exists(name)) {
+                            throw new IllegalArgumentException("并行步骤 " + step.getStepIndex() + " 的 Agent 不存在: " + name);
+                        }
+                    }
+                }
+            } else {
+                if (step.getAgentName() == null || step.getAgentName().isBlank()) {
+                    throw new IllegalArgumentException("步骤 " + step.getStepIndex() + " 的 Agent 名称为空");
+                }
+                if (agentRegistry != null && !agentRegistry.exists(step.getAgentName())) {
+                    throw new IllegalArgumentException("步骤 " + step.getStepIndex() + " 的 Agent 不存在: " + step.getAgentName());
+                }
             }
         }
     }
@@ -108,9 +128,24 @@ public class PlanExecutor {
         List<PlanStep> steps = new ArrayList<>();
         for (int i = 0; i < stepsArr.size(); i++) {
             JSONObject s = stepsArr.getJSONObject(i);
+
+            StepMode mode = "parallel".equalsIgnoreCase(s.getString("mode"))
+                    ? StepMode.PARALLEL : StepMode.SEQUENTIAL;
+
+            JSONArray agentsArr = s.getJSONArray("agents");
+            List<String> agentNames = null;
+            if (agentsArr != null && !agentsArr.isEmpty()) {
+                agentNames = new ArrayList<>();
+                for (int j = 0; j < agentsArr.size(); j++) {
+                    agentNames.add(agentsArr.getString(j));
+                }
+            }
+
             steps.add(PlanStep.builder()
                     .stepIndex(i)
+                    .mode(mode)
                     .agentName(s.getString("agentName"))
+                    .agentNames(agentNames)
                     .input(s.getString("input"))
                     .expectedOutput(s.getString("expectedOutput"))
                     .build());
@@ -187,13 +222,13 @@ public class PlanExecutor {
                 PlanStep step = plan.currentStep();
                 step.setStatus(StepStatus.RUNNING);
 
-                log.info("[Plan:{}] Executing step {}: {} -> {}", planId, step.getStepIndex(), step.getAgentName(), step.getInput());
+                log.info("[Plan:{}] Executing step {}: {} -> {}", planId, step.getStepIndex(), displayName(step), step.getInput());
 
-                AgentResponse result;
+                StepResult stepResult;
                 try {
-                    result = CompletableFuture.supplyAsync(() ->
-                            chatService.directCall(step.getAgentName(), step.getInput(), userId, sessionId), executor)
-                        .get(STEP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    stepResult = CompletableFuture.supplyAsync(() ->
+                                    pipelineExecutor.executeStep(step, userId, sessionId), executor)
+                            .get(STEP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 } catch (TimeoutException e) {
                     step.setActualOutput("步骤执行超时");
                     step.setDurationMs(STEP_TIMEOUT_MS);
@@ -203,9 +238,16 @@ public class PlanExecutor {
                 } catch (Exception e) {
                     throw new RuntimeException("步骤执行异常", e);
                 }
-                step.setActualOutput(result.getOutput());
-                step.setDurationMs(result.getDurationMs());
-                totalTokens += result.getTotalTokens();
+                step.setActualOutput(stepResult.getOutput());
+                step.setDurationMs(stepResult.getDurationMs());
+                if (stepResult.isParallel() && stepResult.getOutputs() != null) {
+                    Map<String, String> parallelOutputs = new LinkedHashMap<>();
+                    for (var entry : stepResult.getOutputs().entrySet()) {
+                        parallelOutputs.put(entry.getKey(), entry.getValue().getOutput());
+                    }
+                    step.setOutputs(parallelOutputs);
+                }
+                totalTokens += stepResult.getTotalTokens();
 
                 if (totalTokens > TOKEN_BUDGET) {
                     plan.markFailed("token 预算超限 (" + totalTokens + " > " + TOKEN_BUDGET + ")");
@@ -256,7 +298,10 @@ public class PlanExecutor {
                 // Emit plan_created
                 sink.next(new PlanEvent(planId,
                         plan.getSteps().stream()
-                                .map(s -> new PlanEvent.PlanStepSummary(s.getStepIndex(), s.getAgentName(), s.getInput()))
+                                .map(s -> new PlanEvent.PlanStepSummary(s.getStepIndex(),
+                                        s.isParallel() && s.getAgentNames() != null
+                                                ? String.join(",", s.getAgentNames()) : s.getAgentName(),
+                                        s.getInput()))
                                 .toList(),
                         plan.getPlanSummary()));
 
@@ -271,32 +316,54 @@ public class PlanExecutor {
                     step.setStatus(StepStatus.RUNNING);
 
                     // Emit step_start
-                    sink.next(new StepStartEvent(step.getStepIndex(), step.getAgentName(), step.getInput()));
+                    if (step.isParallel()) {
+                        sink.next(new ParallelStepStartEvent(step.getStepIndex(), "parallel",
+                                step.getAgentNames(), step.getInput()));
+                    } else {
+                        sink.next(new StepStartEvent(step.getStepIndex(), step.getAgentName(), step.getInput()));
+                    }
 
                     // Execute step with timeout
-                    AgentResponse result;
+                    StepResult stepResult;
                     try {
-                        result = CompletableFuture.supplyAsync(() ->
-                                chatService.directCall(step.getAgentName(), step.getInput(), userId, sessionId), executor)
-                            .get(STEP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                        stepResult = CompletableFuture.supplyAsync(() ->
+                                        pipelineExecutor.executeStep(step, userId, sessionId), executor)
+                                .get(STEP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                     } catch (TimeoutException e) {
                         step.setActualOutput("步骤执行超时");
                         step.setDurationMs(STEP_TIMEOUT_MS);
                         step.setStatus(StepStatus.FAIL);
                         plan.markFailed("步骤 " + step.getStepIndex() + " 执行超时");
-                        sink.next(new StepResultEvent(step.getStepIndex(), "fail", step.getDurationMs()));
+                        if (step.isParallel()) {
+                            sink.next(new ParallelStepResultEvent(step.getStepIndex(), "fail", step.getDurationMs(),
+                                    null, "并行步骤超时"));
+                        } else {
+                            sink.next(new StepResultEvent(step.getStepIndex(), "fail", step.getDurationMs()));
+                        }
                         break;
                     } catch (Exception e) {
                         throw new RuntimeException("步骤执行异常", e);
                     }
 
-                    step.setActualOutput(result.getOutput());
-                    step.setDurationMs(result.getDurationMs());
-                    totalTokens.addAndGet(result.getTotalTokens());
+                    step.setActualOutput(stepResult.getOutput());
+                    step.setDurationMs(stepResult.getDurationMs());
+                    if (stepResult.isParallel() && stepResult.getOutputs() != null) {
+                        Map<String, String> parallelOutputs = new LinkedHashMap<>();
+                        for (var entry : stepResult.getOutputs().entrySet()) {
+                            parallelOutputs.put(entry.getKey(), entry.getValue().getOutput());
+                        }
+                        step.setOutputs(parallelOutputs);
+                    }
+                    totalTokens.addAndGet(stepResult.getTotalTokens());
 
                     if (totalTokens.get() > TOKEN_BUDGET) {
                         plan.markFailed("token 预算超限");
-                        sink.next(new StepResultEvent(step.getStepIndex(), "fail", step.getDurationMs()));
+                        if (step.isParallel()) {
+                            sink.next(new ParallelStepResultEvent(step.getStepIndex(), "fail", step.getDurationMs(),
+                                    step.getOutputs(), "token 预算超限"));
+                        } else {
+                            sink.next(new StepResultEvent(step.getStepIndex(), "fail", step.getDurationMs()));
+                        }
                         break;
                     }
 
@@ -305,33 +372,53 @@ public class PlanExecutor {
                     switch (eval) {
                         case PASS -> {
                             plan.advanceStep();
-                            sink.next(new StepResultEvent(step.getStepIndex(), "pass", step.getDurationMs()));
+                            if (step.isParallel()) {
+                                sink.next(new ParallelStepResultEvent(step.getStepIndex(), "pass", step.getDurationMs(),
+                                        step.getOutputs(), step.getActualOutput()));
+                            } else {
+                                sink.next(new StepResultEvent(step.getStepIndex(), "pass", step.getDurationMs()));
+                            }
                         }
                         case RETRY -> {
                             if (step.getRetryCount() >= MAX_RETRY_PER_STEP) {
                                 step.setStatus(StepStatus.FAIL);
                                 plan.markFailed("步骤 " + step.getStepIndex() + " 重试次数超限");
-                                sink.next(new StepResultEvent(step.getStepIndex(), "fail", step.getDurationMs()));
+                                if (step.isParallel()) {
+                                    sink.next(new ParallelStepResultEvent(step.getStepIndex(), "fail", step.getDurationMs(),
+                                            step.getOutputs(), "重试次数超限"));
+                                } else {
+                                    sink.next(new StepResultEvent(step.getStepIndex(), "fail", step.getDurationMs()));
+                                }
                             } else {
                                 sink.next(new StepRetryEvent(step.getStepIndex(), step.getRetryCount() + 1, eval.getReason()));
                                 retryStep(plan, step);
                             }
                         }
                         case REPLAN -> {
-                            sink.next(new StepResultEvent(step.getStepIndex(), "replan", step.getDurationMs()));
+                            if (step.isParallel()) {
+                                sink.next(new ParallelStepResultEvent(step.getStepIndex(), "replan", step.getDurationMs(),
+                                        step.getOutputs(), step.getActualOutput()));
+                            } else {
+                                sink.next(new StepResultEvent(step.getStepIndex(), "replan", step.getDurationMs()));
+                            }
                             replan(plan);
                             if (plan.getStatus() == PlanStatus.RUNNING) {
                                 sink.next(new ReplanEvent("步骤评估需要重新规划",
                                         plan.getSteps().stream()
                                                 .skip(plan.getCurrentStepIndex())
-                                                .map(s -> new ReplanEvent.PlanStepSummary(s.getStepIndex(), s.getAgentName(), s.getInput()))
+                                                .map(s -> new ReplanEvent.PlanStepSummary(s.getStepIndex(), displayName(s), s.getInput()))
                                                 .toList()));
                             }
                         }
                         case FAIL -> {
                             step.setStatus(StepStatus.FAIL);
                             plan.markFailed("步骤评估为 FAIL");
-                            sink.next(new StepResultEvent(step.getStepIndex(), "fail", step.getDurationMs()));
+                            if (step.isParallel()) {
+                                sink.next(new ParallelStepResultEvent(step.getStepIndex(), "fail", step.getDurationMs(),
+                                        step.getOutputs(), "步骤评估为 FAIL"));
+                            } else {
+                                sink.next(new StepResultEvent(step.getStepIndex(), "fail", step.getDurationMs()));
+                            }
                         }
                     }
                 }
@@ -392,7 +479,7 @@ public class PlanExecutor {
         sb.append("--- 已完成步骤开始 ---\n");
         for (int i = 0; i < plan.getCurrentStepIndex(); i++) {
             PlanStep s = plan.getSteps().get(i);
-            sb.append("- ").append(s.getAgentName()).append(": ").append(s.getInput())
+            sb.append("- ").append(displayName(s)).append(": ").append(s.getInput())
                     .append(" → ").append(s.getActualOutput() != null ? s.getActualOutput().substring(0, Math.min(s.getActualOutput().length(), 200)) : "无输出")
                     .append("\n");
         }
@@ -402,7 +489,7 @@ public class PlanExecutor {
             sb.append("当前无活跃步骤\n");
         } else {
             sb.append("--- 当前失败步骤开始 ---\n");
-            sb.append(current.getAgentName()).append(": ").append(current.getInput()).append("\n");
+            sb.append(displayName(current)).append(": ").append(current.getInput()).append("\n");
             sb.append("--- 当前失败步骤结束 ---\n\n");
         }
         sb.append("请重新规划后续步骤：");
@@ -422,7 +509,7 @@ public class PlanExecutor {
         for (PlanStep step : plan.getSteps()) {
             output.append("步骤 ").append(step.getStepIndex() + 1).append(": ");
             output.append("[").append(step.getStatus()).append("] ");
-            output.append(step.getAgentName()).append(" - ").append(step.getInput());
+            output.append(displayName(step)).append(" - ").append(step.getInput());
             if (step.getActualOutput() != null) {
                 output.append("\n  输出: ").append(step.getActualOutput(), 0, Math.min(step.getActualOutput().length(), 300));
             }
@@ -438,6 +525,13 @@ public class PlanExecutor {
                 .status(plan.getStatus() == PlanStatus.COMPLETED ? "success" : "failed")
                 .sourceAgent("plan_executor")
                 .build();
+    }
+
+    private String displayName(PlanStep s) {
+        if (s.isParallel() && s.getAgentNames() != null) {
+            return String.join(",", s.getAgentNames());
+        }
+        return s.getAgentName() != null ? s.getAgentName() : "unknown";
     }
 
     String extractJson(String text) {
