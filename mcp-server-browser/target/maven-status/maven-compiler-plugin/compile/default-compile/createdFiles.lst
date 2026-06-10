@@ -1,0 +1,5 @@
+com/suke/mcp/browser/config/BrowserConfig.class
+com/suke/mcp/browser/tool/BrowserTool.class
+com/suke/mcp/browser/BrowserMcpApplication.class
+com/suke/mcp/browser/service/PlaywrightManager.class
+com/suke/mcp/browser/service/BrowserService.class

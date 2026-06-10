@@ -1,0 +1,81 @@
+{
+  "tokenEstimation": {
+    "chineseOnly": {
+      "input": "分析销售数据的增长趋势",
+      "expectedChineseChars": 11,
+      "expectedOldFormulaTokens": 3,
+      "expectedNewFormulaTokens": 8,
+      "description": "11个中文字符，旧公式ceil(11/4)=3，新公式ceil(11/1.5)=8"
+    },
+    "englishOnly": {
+      "input": "analyze sales data trends",
+      "expectedEnglishChars": 25,
+      "expectedOldFormulaTokens": 7,
+      "expectedNewFormulaTokens": 7,
+      "description": "25个英文字符(含空格)，旧公式ceil(25/4)=7，新公式ceil(25/4)=7"
+    },
+    "mixedChineseEnglish": {
+      "input": "分析sales增长trend数据",
+      "expectedChineseChars": 6,
+      "expectedEnglishChars": 10,
+      "expectedOldFormulaTokens": 4,
+      "expectedNewFormulaTokens": 7,
+      "description": "6中文字+10英文字，旧公式ceil(16/4)=4，新公式ceil(6/1.5)+ceil(10/4)=4+3=7"
+    },
+    "emptyString": {
+      "input": "",
+      "expectedTokens": 0
+    }
+  },
+  "compression": {
+    "triggered": {
+      "description": "10轮对话(20条消息)，keepRecentRounds=3，tokenBudget=100，应触发压缩",
+      "inputRounds": 10,
+      "keepRecentRounds": 3,
+      "tokenBudget": 100,
+      "expectedMinCompressedSize": 7,
+      "expectedRecentMessages": 6,
+      "expectedSummaryMessages": 1
+    },
+    "notTriggered": {
+      "description": "2轮对话(4条消息)，tokenBudget=8000，不应触发压缩",
+      "inputRounds": 2,
+      "keepRecentRounds": 3,
+      "tokenBudget": 8000,
+      "expectedResult": "UNCHANGED",
+      "expectedSize": 4
+    },
+    "fallbackTruncation": {
+      "description": "LLM摘要失败时降级为截断，保留最近N轮",
+      "inputRounds": 10,
+      "keepRecentRounds": 2,
+      "tokenBudget": 100,
+      "expectedMaxTruncatedSize": 4,
+      "expectedRecentMessages": 4
+    }
+  },
+  "conversationFlow": {
+    "firstTurn": {
+      "sessionId": "sess-first-001",
+      "userMessage": "分析Q1销售数据",
+      "userId": 1,
+      "agentName": "data_analyst",
+      "memoryContext": "[用户记忆]\n行业: 金融\n常用图表: 折线图\n",
+      "skillPrompt": "[可用 Skills]\n- sales_analysis: 销售趋势分析\n",
+      "expectedContainsMemory": true,
+      "expectedContainsSkill": true,
+      "expectedContainsOriginalMessage": true,
+      "expectedOriginalMessage": "分析Q1销售数据"
+    },
+    "secondTurn": {
+      "sessionId": "sess-multi-001",
+      "userMessage": "继续分析华东区域",
+      "userId": 1,
+      "agentName": "data_analyst",
+      "preloadedMessages": 4,
+      "expectedContainsMemory": false,
+      "expectedContainsSkill": false,
+      "expectedExactMessage": "继续分析华东区域"
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "sequentialStep": {
+    "output": "分析完成",
+    "status": "success",
+    "durationMs": 500,
+    "parallel": false,
+    "outputs": null
+  },
+  "parallelStepAllSuccess": {
+    "output": "## web_scraper 的结果:\n抓取到销售数据\n\n## sql_analyst 的结果:\n查询到历史记录\n\n",
+    "status": "success",
+    "durationMs": 850,
+    "parallel": true,
+    "outputs": {
+      "web_scraper": {"output": "抓取到销售数据", "status": "success", "durationMs": 800},
+      "sql_analyst": {"output": "查询到历史记录", "status": "success", "durationMs": 600}
+    }
+  },
+  "parallelStepPartialFailure": {
+    "output": "## good_agent 的结果:\n成功数据\n\n## bad_agent 的结果:\n执行失败\n\n",
+    "status": "partial",
+    "durationMs": 150,
+    "parallel": true,
+    "outputs": {
+      "good_agent": {"output": "成功数据", "status": "success", "durationMs": 100},
+      "bad_agent": {"output": "执行失败", "status": "failed", "durationMs": 50}
+    },
+    "partialFailure": true
+  },
+  "parallelTimeout": {
+    "output": "并行步骤超时 (1s)",
+    "status": "failed",
+    "parallel": false
+  },
+  "maxAgentsExceeded": {
+    "exception": "IllegalArgumentException",
+    "message": "并行步骤 0 的 agent 数量 (5) 超过上限 (4)"
+  }
+}

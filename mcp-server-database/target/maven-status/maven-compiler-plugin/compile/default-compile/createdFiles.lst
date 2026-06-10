@@ -1,0 +1,5 @@
+com/suke/mcp/database/tool/DatabaseTool.class
+com/suke/mcp/database/config/DatabaseConfig.class
+com/suke/mcp/database/service/QueryService.class
+com/suke/mcp/database/service/SqlSafetyChecker.class
+com/suke/mcp/database/DatabaseMcpApplication.class

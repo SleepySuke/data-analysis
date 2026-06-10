@@ -1,0 +1,5 @@
+/Users/suke/Java/data-analysis/mcp-server-database/src/main/java/com/suke/mcp/database/DatabaseMcpApplication.java
+/Users/suke/Java/data-analysis/mcp-server-database/src/main/java/com/suke/mcp/database/config/DatabaseConfig.java
+/Users/suke/Java/data-analysis/mcp-server-database/src/main/java/com/suke/mcp/database/service/QueryService.java
+/Users/suke/Java/data-analysis/mcp-server-database/src/main/java/com/suke/mcp/database/service/SqlSafetyChecker.java
+/Users/suke/Java/data-analysis/mcp-server-database/src/main/java/com/suke/mcp/database/tool/DatabaseTool.java

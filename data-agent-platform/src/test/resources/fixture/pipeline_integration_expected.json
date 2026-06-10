@@ -1,0 +1,43 @@
+{
+  "description": "混合串行/并行计划的预期执行结果",
+  "steps": [
+    {
+      "stepIndex": 0,
+      "mode": "SEQUENTIAL",
+      "agentName": "data_cleaner",
+      "input": "清洗数据",
+      "expectedOutput": {
+        "status": "PASS",
+        "actualOutput": "清洗后数据",
+        "parallel": false
+      }
+    },
+    {
+      "stepIndex": 1,
+      "mode": "PARALLEL",
+      "agentNames": ["web_scraper", "sql_analyst"],
+      "input": "获取多源数据",
+      "expectedOutput": {
+        "status": "PASS",
+        "containsKeywords": ["网页数据", "SQL查询结果"],
+        "parallel": true,
+        "agentOutputs": {
+          "web_scraper": {"output": "网页数据", "status": "success"},
+          "sql_analyst": {"output": "SQL查询结果", "status": "success"}
+        }
+      }
+    },
+    {
+      "stepIndex": 2,
+      "mode": "SEQUENTIAL",
+      "agentName": "data_analyst",
+      "input": "分析",
+      "expectedOutput": {
+        "status": "PASS",
+        "actualOutput": "综合分析报告",
+        "parallel": false
+      }
+    }
+  ],
+  "finalPlanStatus": "COMPLETED"
+}

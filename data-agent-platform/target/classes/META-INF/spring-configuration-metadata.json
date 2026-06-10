@@ -1,0 +1,240 @@
+{
+  "groups": [
+    {
+      "name": "agent.mcp",
+      "type": "com.suke.agent.config.McpBindingProperties",
+      "sourceType": "com.suke.agent.config.McpBindingProperties"
+    },
+    {
+      "name": "agent.pipeline",
+      "type": "com.suke.agent.config.PipelineProperties",
+      "sourceType": "com.suke.agent.config.PipelineProperties"
+    },
+    {
+      "name": "minio",
+      "type": "com.suke.config.MinioConfig",
+      "sourceType": "com.suke.config.MinioConfig"
+    },
+    {
+      "name": "python.script",
+      "type": "com.suke.config.PythonScriptProperties",
+      "sourceType": "com.suke.config.PythonScriptProperties"
+    },
+    {
+      "name": "rag.redis",
+      "type": "com.suke.config.RAGConfig",
+      "sourceType": "com.suke.config.RAGConfig"
+    },
+    {
+      "name": "rag.search",
+      "type": "com.suke.config.RAGSearchProperties",
+      "sourceType": "com.suke.config.RAGSearchProperties"
+    },
+    {
+      "name": "spring.data.redis",
+      "type": "com.suke.config.RedisConfig",
+      "sourceType": "com.suke.config.RedisConfig"
+    },
+    {
+      "name": "suke.jwt",
+      "type": "com.suke.properties.JWTProperties",
+      "sourceType": "com.suke.properties.JWTProperties"
+    }
+  ],
+  "properties": [
+    {
+      "name": "agent.mcp.bindings",
+      "type": "java.util.Map<java.lang.String,java.lang.String>",
+      "sourceType": "com.suke.agent.config.McpBindingProperties"
+    },
+    {
+      "name": "agent.mcp.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.suke.agent.config.McpBindingProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "agent.pipeline.max-parallel-agents",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.agent.config.PipelineProperties",
+      "defaultValue": 4
+    },
+    {
+      "name": "agent.pipeline.parallel-timeout-seconds",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.agent.config.PipelineProperties",
+      "defaultValue": 60
+    },
+    {
+      "name": "agent.pipeline.presets",
+      "type": "java.util.Map<java.lang.String,com.suke.agent.config.PipelineProperties$PipelinePreset>",
+      "sourceType": "com.suke.agent.config.PipelineProperties"
+    },
+    {
+      "name": "minio.access-key",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.MinioConfig"
+    },
+    {
+      "name": "minio.endpoint",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.MinioConfig"
+    },
+    {
+      "name": "minio.secret-key",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.MinioConfig"
+    },
+    {
+      "name": "python.script.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.suke.config.PythonScriptProperties",
+      "defaultValue": true
+    },
+    {
+      "name": "python.script.executable",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.PythonScriptProperties",
+      "defaultValue": "python3"
+    },
+    {
+      "name": "python.script.timeout",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.PythonScriptProperties",
+      "defaultValue": 60
+    },
+    {
+      "name": "rag.redis.embedding-dimensions",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.RAGConfig",
+      "defaultValue": 1024
+    },
+    {
+      "name": "rag.redis.host",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.RAGConfig"
+    },
+    {
+      "name": "rag.redis.index-name",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.RAGConfig",
+      "defaultValue": "idx:data_analysis_knowledge_v1"
+    },
+    {
+      "name": "rag.redis.knowledge-content",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.RAGConfig",
+      "defaultValue": "knowledge_content"
+    },
+    {
+      "name": "rag.redis.metadata-prefix",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.RAGConfig",
+      "defaultValue": "meta:knowledge:"
+    },
+    {
+      "name": "rag.redis.port",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.RAGConfig"
+    },
+    {
+      "name": "rag.redis.vector-prefix",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.RAGConfig",
+      "defaultValue": "vec:knowledge:"
+    },
+    {
+      "name": "rag.search.bm25-top-k",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.RAGSearchProperties",
+      "defaultValue": 10
+    },
+    {
+      "name": "rag.search.hybrid-enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.suke.config.RAGSearchProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "rag.search.rerank-enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.suke.config.RAGSearchProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "rag.search.rerank-model",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.RAGSearchProperties",
+      "defaultValue": "gte-rerank-v2"
+    },
+    {
+      "name": "rag.search.rerank-top-n",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.RAGSearchProperties",
+      "defaultValue": 5
+    },
+    {
+      "name": "rag.search.rrf-k",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.RAGSearchProperties",
+      "defaultValue": 60
+    },
+    {
+      "name": "rag.search.similarity-threshold",
+      "type": "java.lang.Double",
+      "sourceType": "com.suke.config.RAGSearchProperties",
+      "defaultValue": 0.5
+    },
+    {
+      "name": "rag.search.top-k",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.RAGSearchProperties",
+      "defaultValue": 5
+    },
+    {
+      "name": "rag.search.vector-top-k",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.RAGSearchProperties",
+      "defaultValue": 10
+    },
+    {
+      "name": "spring.data.redis.database",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.RedisConfig"
+    },
+    {
+      "name": "spring.data.redis.host",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.RedisConfig"
+    },
+    {
+      "name": "spring.data.redis.password",
+      "type": "java.lang.String",
+      "sourceType": "com.suke.config.RedisConfig"
+    },
+    {
+      "name": "spring.data.redis.port",
+      "type": "java.lang.Integer",
+      "sourceType": "com.suke.config.RedisConfig"
+    },
+    {
+      "name": "suke.jwt.secret-key",
+      "type": "java.lang.String",
+      "description": "密钥",
+      "sourceType": "com.suke.properties.JWTProperties"
+    },
+    {
+      "name": "suke.jwt.token-name",
+      "type": "java.lang.String",
+      "description": "令牌名称",
+      "sourceType": "com.suke.properties.JWTProperties"
+    },
+    {
+      "name": "suke.jwt.ttl",
+      "type": "java.lang.Long",
+      "description": "过期时间",
+      "sourceType": "com.suke.properties.JWTProperties"
+    }
+  ],
+  "hints": []
+}
